@@ -9,7 +9,7 @@
 
 - **이름**: ProductCraft AI (Korean fashion e-commerce SaaS — 사진 1장 → 상품명·카피·상세설명·썸네일·AI피팅 자동 생성)
 - **루트**: `/Users/yohan/Documents/claude/Fashion Product Manager/productcraft-ai`
-- **레포**: `github.com/papasyohan/Fashion-Product-manager` (main 브랜치)
+- **레포**: `github.com/papascompany/Fashion-Product-manager` (main 브랜치) — *2026-06-19 papasyohan→papascompany 조직으로 이전 (Vercel git 자동배포 복구 목적)*
 - **배포**: Vercel GitHub Integration **자동 배포** (`main` push → 자동 빌드). 별칭 `productcraft-ai.vercel.app`
 - **운영자**: yohan73@gmail.com, yohan@papascompany.co.kr (둘 다 admin)
 - **스택**: Next.js **16.2.4** (App Router, Turbopack) · React 19.2 · Vercel AI SDK **v6** · Supabase · pnpm v10
