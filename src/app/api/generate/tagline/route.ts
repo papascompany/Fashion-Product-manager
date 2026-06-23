@@ -4,6 +4,7 @@ import { z } from 'zod'
 import { createClient } from '@/lib/supabase/server'
 import { generateTagline } from '@/lib/ai/generators/tagline-agent'
 import { UserIntentSchema } from '@/lib/ai/types'
+import { checkCreditGuard, deductCredits } from '@/lib/credit-guard'
 
 export const runtime = 'edge'
 export const dynamic = 'force-dynamic'
@@ -32,6 +33,16 @@ export async function POST(request: NextRequest) {
     }
 
     const { productName, category, keywords, mood, projectId, userIntent, refinement, parentId } = parsed.data
+
+    // BIZ-07 — 부분재생성 라우트에도 크레딧 가드 (studio_text_refine = 1 크레딧)
+    const guard = await checkCreditGuard({ userId: user.id, operation: 'studio_text_refine' })
+    if (!guard.allowed) {
+      return NextResponse.json(
+        { error: guard.reason, code: guard.code, upgradeUrl: guard.upgradeUrl, guardResult: guard },
+        { status: 402 }
+      )
+    }
+
     const result = await generateTagline({
       productName,
       category,
@@ -50,6 +61,8 @@ export async function POST(request: NextRequest) {
         refinement_prompt: refinement ?? null,
       })
     }
+
+    await deductCredits({ userId: user.id, operation: 'studio_text_refine' })
 
     return NextResponse.json(result)
   } catch (err) {
