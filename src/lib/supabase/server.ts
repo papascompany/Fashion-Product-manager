@@ -8,12 +8,16 @@
  */
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
-import type { Database } from '@/types/supabase'
+// Track 3 의 <Database> 제네릭은 supabase-js v2 의 select-string 추론과
+// 충돌해 다수 호출 사이트에서 row 가 `never` 로 좁아져 빌드 실패를 일으켰다.
+// types/supabase.ts 는 정의가 정확하지만 47 개 호출 사이트의 cast 보강이
+// 별도 작업으로 필요. 우선 untyped 로 되돌리고 supabase gen types 연결 후
+// 재적용한다 (TYP-01 후속 PR).
 
 export async function createClient() {
   const cookieStore = await cookies()
 
-  return createServerClient<Database>(
+  return createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
@@ -43,7 +47,7 @@ export async function createClient() {
 export async function createAdminClient() {
   const cookieStore = await cookies()
 
-  return createServerClient<Database>(
+  return createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
     {
