@@ -1,7 +1,11 @@
 /**
  * Supabase 브라우저 클라이언트 (클라이언트 컴포넌트용)
+ *
+ * Track 3 (TYP-01) — `<Database>` 제네릭을 명시해 client-side `.from()` 호출도
+ * 정적 타입 안전망 안에 둔다.
  */
 import { createBrowserClient } from '@supabase/ssr'
+import type { Database } from '@/types/supabase'
 
 /**
  * 환경변수가 비어있거나 placeholder인지 감지하고 사용자가 이해 가능한 에러를 던진다.
@@ -44,5 +48,5 @@ export function createClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL ?? ''
   const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? ''
   assertSupabaseEnv(url, key)
-  return createBrowserClient(url, key)
+  return createBrowserClient<Database>(url, key)
 }
