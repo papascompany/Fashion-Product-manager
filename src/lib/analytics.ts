@@ -1,5 +1,10 @@
+// Next 16/Turbopack: dynamic import 도 static 분석으로 client 번들에 끌려오므로
+// 'server-only' 가드로 client 컴포넌트에서 import 시 명확한 빌드 에러 발생.
+// 호출은 server-side(API route, server component)에서만.
+import 'server-only'
+
 /**
- * 경량 분석 이벤트 로거 (운영 강화 ④)
+ * 경량 분석 이벤트 로거 (운영 강화 ④, server-only)
  *
  * 핵심 액션(생성 시작/완료, 피팅 생성, 크레딧 구매)을 한 줄 호출로 기록한다.
  *

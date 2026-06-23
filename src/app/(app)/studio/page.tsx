@@ -23,7 +23,6 @@ import {
 } from '@/store/studio'
 import type { CreditGuardResult } from '@/lib/credit-guard'
 import { consumePipelineSSE } from '@/lib/ai/sse-client'
-import { logEvent } from '@/lib/analytics'
 
 // ─── 진행률 매핑 ─────────────────────────────────────────────────────────
 
@@ -265,8 +264,7 @@ function StudioPageInner() {
   // ─── 파이프라인 실행 (SSE 스트리밍) ─────────────────────────────────────
   const runPipeline = async (imageUrl: string, base64: string, mode: StudioMode) => {
     store.setStatus('analyzing', STATUS_PROGRESS.analyzing)
-    // TYP-03 — 분석 이벤트(생성 시작). userId 없이도 dev console 에 남는다.
-    void logEvent('generation_started', { mode })
+    // analytics: generation_started 는 server-side pipeline/route.ts 에서 기록 (client 직접 호출 시 supabase/server 가 client 번들로 끌려와 빌드 깨짐 — Turbopack)
 
     // SSE 누적 상태
     let projectId: string | null = null
@@ -424,13 +422,7 @@ function StudioPageInner() {
 
       store.setResult(result)
       setCreditsLeft((prev) => Math.max(prev - 1, 0))
-      // TYP-03 — 분석 이벤트(생성 완료)
-      void logEvent('generation_completed', {
-        projectId: projectId ?? undefined,
-        mode,
-        credits: 1,
-        thumbnailCount: result.thumbnails?.length ?? 0,
-      })
+      // analytics: generation_completed 는 server-side pipeline/route.ts 에서 기록
     } catch (err) {
       const message = err instanceof Error ? err.message : '알 수 없는 오류'
       store.setError(message)
@@ -661,12 +653,7 @@ function StudioPageInner() {
       setLastModelImageUrl(data.modelImageUrl)
       store.setModelImage(data.modelImageUrl, null)
     }
-    // TYP-03 — 분석 이벤트(생성 완료)
-    void logEvent('fitting_created', {
-      projectId: requestProjectId,
-      credits: items.length,
-      aspectRatios,
-    })
+    // analytics: fitting_created 는 server-side ai-fitting/route.ts 에서 기록
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [store.projectId, store.result, store.modelImageBase64, store.modelImageUrl, store.reuseLastModel, store.uploadedImageBase64, store.uploadedImageUrl, store.thumbnailResolution, lastModelImageUrl, effectiveAnalysis])
 
