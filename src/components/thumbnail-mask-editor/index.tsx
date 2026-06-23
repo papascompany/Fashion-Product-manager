@@ -63,6 +63,8 @@ export function ThumbnailMaskEditor({ imageUrl, aspectRatio, onClose, onApply }:
   const [error, setError] = useState<string | null>(null)
   // 렌더에서 canvasRef.current 를 직접 읽지 않도록 치수를 state 로 관리
   const [canvasSize, setCanvasSize] = useState<{ width: number; height: number } | null>(null)
+  // UX-04 — a11y: panel ref for focus trap
+  const panelRef = useRef<HTMLDivElement>(null)
 
   // drawCanvas 를 effect 보다 먼저 선언 (const 는 호이스팅 안 됨)
   const drawCanvas = useCallback(() => {
@@ -128,6 +130,48 @@ export function ThumbnailMaskEditor({ imageUrl, aspectRatio, onClose, onApply }:
   useEffect(() => {
     drawCanvas()
   }, [box, drawCanvas])
+
+  // UX-04 — a11y: ESC 닫기 + focus trap + body scroll lock
+  useEffect(() => {
+    const previouslyFocused = document.activeElement as HTMLElement | null
+    const first = panelRef.current?.querySelector<HTMLElement>(
+      'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+    )
+    first?.focus()
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !submitting) {
+        e.stopPropagation()
+        onClose()
+        return
+      }
+      if (e.key === 'Tab' && panelRef.current) {
+        const focusable = Array.from(
+          panelRef.current.querySelectorAll<HTMLElement>(
+            'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+          )
+        )
+        if (focusable.length === 0) return
+        const firstEl = focusable[0]
+        const lastEl = focusable[focusable.length - 1]
+        const active = document.activeElement as HTMLElement | null
+        if (e.shiftKey && active === firstEl) {
+          e.preventDefault()
+          lastEl.focus()
+        } else if (!e.shiftKey && active === lastEl) {
+          e.preventDefault()
+          firstEl.focus()
+        }
+      }
+    }
+    document.addEventListener('keydown', onKey)
+    const prevOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => {
+      document.removeEventListener('keydown', onKey)
+      document.body.style.overflow = prevOverflow
+      previouslyFocused?.focus?.()
+    }
+  }, [onClose, submitting])
 
   const getCanvasPoint = (e: React.MouseEvent | React.TouchEvent) => {
     const canvas = canvasRef.current
@@ -199,6 +243,10 @@ export function ThumbnailMaskEditor({ imageUrl, aspectRatio, onClose, onApply }:
       style={{ backgroundColor: 'rgba(0,0,0,0.75)' }}
     >
       <div
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="mask-editor-title"
         className="w-full max-w-2xl bg-white overflow-hidden"
         style={{ border: '1px solid #e5e5e5' }}
       >
@@ -208,13 +256,14 @@ export function ThumbnailMaskEditor({ imageUrl, aspectRatio, onClose, onApply }:
             <div className="text-[10px] font-black uppercase tracking-widest text-[#9e9ea0]">
               영역 마스크 편집
             </div>
-            <h3 className="text-[16px] font-black text-[#111111]">
+            <h3 id="mask-editor-title" className="text-[16px] font-black text-[#111111]">
               바꾸고 싶은 영역을 드래그하여 선택
             </h3>
           </div>
           <button
             onClick={onClose}
             disabled={submitting}
+            aria-label="마스크 편집기 닫기"
             className="w-8 h-8 rounded-full flex items-center justify-center hover:bg-[#f5f5f5] transition-colors"
           >
             <X className="w-4 h-4 text-[#707072]" strokeWidth={2.5} />

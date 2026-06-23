@@ -13,7 +13,7 @@
  * Nike 디자인 — 0px radius, hairline border
  */
 
-import { useState, useCallback } from 'react'
+import { useEffect, useRef, useState, useCallback } from 'react'
 import { Plus, GripVertical, MoreHorizontal, Trash2, Download, Save, ExternalLink, X, Loader2, Sparkles } from 'lucide-react'
 import { EditableText } from '@/components/editable-text'
 import { PointKeywords } from '@/components/point-keywords'
@@ -329,33 +329,91 @@ export function DetailPageEditor({ sections, onChange, projectId, defaults }: De
 
       {/* 미리보기 모달 */}
       {previewHtml && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4"
-          style={{ backgroundColor: 'rgba(0,0,0,0.7)' }}
-          onClick={() => setPreviewHtml(null)}
-        >
-          <div
-            className="w-full max-w-3xl bg-white overflow-hidden"
-            style={{ border: '1px solid #e5e5e5' }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="px-5 py-3 flex items-center justify-between" style={{ borderBottom: '1px solid #e5e5e5' }}>
-              <div className="text-[13px] font-black text-[#111111]">상세페이지 미리보기</div>
-              <button onClick={() => setPreviewHtml(null)} className="p-1 text-[#707072] hover:text-[#111111]">
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-            <iframe
-              title="상세페이지 미리보기"
-              srcDoc={previewHtml}
-              sandbox="allow-same-origin"
-              className="w-full bg-white"
-              style={{ height: '70vh' }}
-            />
-          </div>
-        </div>
+        <PreviewModal html={previewHtml} onClose={() => setPreviewHtml(null)} />
       )}
     </>
+  )
+}
+
+// ─── 미리보기 모달 (UX-04 a11y + UX-09 iframe sandbox 강화) ────────────────
+function PreviewModal({ html, onClose }: { html: string; onClose: () => void }) {
+  const panelRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const previouslyFocused = document.activeElement as HTMLElement | null
+    const first = panelRef.current?.querySelector<HTMLElement>(
+      'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+    )
+    first?.focus()
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.stopPropagation()
+        onClose()
+        return
+      }
+      if (e.key === 'Tab' && panelRef.current) {
+        const focusable = Array.from(
+          panelRef.current.querySelectorAll<HTMLElement>(
+            'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+          )
+        )
+        if (focusable.length === 0) return
+        const firstEl = focusable[0]
+        const lastEl = focusable[focusable.length - 1]
+        const active = document.activeElement as HTMLElement | null
+        if (e.shiftKey && active === firstEl) {
+          e.preventDefault()
+          lastEl.focus()
+        } else if (!e.shiftKey && active === lastEl) {
+          e.preventDefault()
+          firstEl.focus()
+        }
+      }
+    }
+    document.addEventListener('keydown', onKey)
+    const prevOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => {
+      document.removeEventListener('keydown', onKey)
+      document.body.style.overflow = prevOverflow
+      previouslyFocused?.focus?.()
+    }
+  }, [onClose])
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      style={{ backgroundColor: 'rgba(0,0,0,0.7)' }}
+      onClick={onClose}
+    >
+      <div
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="detail-preview-title"
+        className="w-full max-w-3xl bg-white overflow-hidden"
+        style={{ border: '1px solid #e5e5e5' }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="px-5 py-3 flex items-center justify-between" style={{ borderBottom: '1px solid #e5e5e5' }}>
+          <div id="detail-preview-title" className="text-[13px] font-black text-[#111111]">상세페이지 미리보기</div>
+          <button
+            onClick={onClose}
+            aria-label="미리보기 닫기"
+            className="p-1 text-[#707072] hover:text-[#111111]"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+        <iframe
+          title="상세페이지 미리보기"
+          srcDoc={html}
+          // UX-09 — allow-same-origin 제거. allow-popups 만 유지해 부모 origin 권한 차단
+          sandbox="allow-popups"
+          referrerPolicy="no-referrer"
+          className="w-full bg-white"
+          style={{ height: '70vh' }}
+        />
+      </div>
+    </div>
   )
 }
 

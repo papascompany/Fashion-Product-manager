@@ -1,9 +1,9 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import Image from 'next/image'
 import Link from 'next/link'
-import { Zap, Wand2, Clock, ImageOff, ChevronRight, Trash2, Loader2, Shirt, ExternalLink } from 'lucide-react'
+import { Zap, Wand2, Clock, ImageOff, ChevronRight, Trash2, Loader2, Shirt, X, Download } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import type { FittingHistoryItem } from '@/lib/history-items'
 
@@ -39,6 +39,8 @@ export function HistoryClient({ projects: initialProjects, fittings = [], plan =
   const [filter, setFilter] = useState<'all' | 'quick' | 'studio' | 'fitting'>('all')
   const [projects, setProjects] = useState<Project[]>(initialProjects)
   const [deleteState, setDeleteState] = useState<Record<string, 'confirm' | 'deleting'>>({})
+  // UX-11 — 피팅 카드 클릭 시 인플레이스 미리보기 (새 탭 대신 모달)
+  const [fittingPreview, setFittingPreview] = useState<FittingHistoryItem | null>(null)
 
   // '전체' 뷰: projects + fittings 를 created_at desc 로 병합.
   // 'quick' | 'studio': 해당 모드의 프로젝트만. 'fitting': AI 피팅 결과만.
@@ -184,19 +186,18 @@ export function HistoryClient({ projects: initialProjects, fittings = [], plan =
       ) : (
         <div className="space-y-2">
           {mergedItems.map((item) => {
-            // ─── AI 피팅 결과 카드 — 결과 이미지 자체가 산출물 ───────────────
-            // 스튜디오의 loadProject 는 텍스트 생성물만 복원하고 피팅 이미지는
-            // 표시하지 않으므로, /studio 로 딥링크하지 않고 result_url 을 새 탭으로 연다.
+            // ─── AI 피팅 결과 카드 — UX-11: 일반 카드와 같은 인플레이스 미리보기 패턴 ─
+            // 이전: 새 탭에서 result_url 직접 열기 (탐색 비일관).
+            // 변경: button + 모달 미리보기 — 일반 카드의 클릭→상세 보기와 같은 멘탈모델.
             // (삭제 UI 는 projects.delete 기반이라 피팅 카드에는 노출하지 않음 — 읽기 전용)
             if (item.kind === 'fitting') {
               const fitting = item.fitting
               return (
-                <a
+                <button
                   key={`fitting-${fitting.id}`}
-                  href={fitting.resultUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="group flex items-center gap-4 p-5 hover:bg-[#f5f5f5] transition-all cursor-pointer relative"
+                  type="button"
+                  onClick={() => setFittingPreview(fitting)}
+                  className="group flex items-center gap-4 p-5 hover:bg-[#f5f5f5] transition-all cursor-pointer relative text-left w-full"
                   style={{ border: '1px solid #e5e5e5', backgroundColor: '#ffffff' }}
                 >
                   {/* hover 시 좌측 검정 인디케이터 */}
@@ -252,17 +253,17 @@ export function HistoryClient({ projects: initialProjects, fittings = [], plan =
                     </p>
                   </div>
 
-                  {/* 액션 — 새 탭에서 보기 */}
+                  {/* 액션 — 일반 카드와 동일한 패턴 (인플레이스 미리보기) */}
                   <div className="flex items-center gap-2">
                     <span
                       className="inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-[12px] font-semibold text-[#111111] transition-colors opacity-100 md:opacity-0 group-hover:opacity-100"
                       style={{ backgroundColor: '#f5f5f5', border: '1px solid #cacacb' }}
                     >
-                      원본 보기
-                      <ExternalLink className="w-3.5 h-3.5" />
+                      미리보기
+                      <ChevronRight className="w-3.5 h-3.5" />
                     </span>
                   </div>
-                </a>
+                </button>
               )
             }
 
@@ -397,6 +398,126 @@ export function HistoryClient({ projects: initialProjects, fittings = [], plan =
           })}
         </div>
       )}
+
+      {/* UX-11 — 피팅 인플레이스 미리보기 모달 */}
+      {fittingPreview && (
+        <FittingPreviewModal
+          item={fittingPreview}
+          onClose={() => setFittingPreview(null)}
+        />
+      )}
+    </div>
+  )
+}
+
+// ─── 피팅 미리보기 모달 (UX-04 a11y + UX-11 탐색 일관성) ───────────────────
+function FittingPreviewModal({ item, onClose }: { item: FittingHistoryItem; onClose: () => void }) {
+  const panelRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const previouslyFocused = document.activeElement as HTMLElement | null
+    const first = panelRef.current?.querySelector<HTMLElement>(
+      'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+    )
+    first?.focus()
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.stopPropagation()
+        onClose()
+        return
+      }
+      if (e.key === 'Tab' && panelRef.current) {
+        const focusable = Array.from(
+          panelRef.current.querySelectorAll<HTMLElement>(
+            'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+          )
+        )
+        if (focusable.length === 0) return
+        const firstEl = focusable[0]
+        const lastEl = focusable[focusable.length - 1]
+        const active = document.activeElement as HTMLElement | null
+        if (e.shiftKey && active === firstEl) {
+          e.preventDefault()
+          lastEl.focus()
+        } else if (!e.shiftKey && active === lastEl) {
+          e.preventDefault()
+          firstEl.focus()
+        }
+      }
+    }
+    document.addEventListener('keydown', onKey)
+    const prevOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => {
+      document.removeEventListener('keydown', onKey)
+      document.body.style.overflow = prevOverflow
+      previouslyFocused?.focus?.()
+    }
+  }, [onClose])
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      style={{ backgroundColor: 'rgba(0,0,0,0.7)' }}
+      onClick={onClose}
+    >
+      <div
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="fitting-preview-title"
+        className="w-full max-w-2xl bg-white overflow-hidden"
+        style={{ border: '1px solid #e5e5e5' }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="px-5 py-3 flex items-center justify-between" style={{ borderBottom: '1px solid #e5e5e5' }}>
+          <div className="flex items-center gap-2">
+            <span
+              className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-black uppercase tracking-widest"
+              style={{ backgroundColor: '#111111', color: '#ffffff' }}
+            >
+              <Shirt className="w-3 h-3" />
+              AI 피팅
+            </span>
+            <h3 id="fitting-preview-title" className="text-[14px] font-black text-[#111111]">
+              피팅 결과 미리보기 {item.aspectRatio ? `· ${item.aspectRatio}` : ''}
+            </h3>
+          </div>
+          <button
+            onClick={onClose}
+            aria-label="미리보기 닫기"
+            className="p-1 text-[#707072] hover:text-[#111111]"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+        <div className="p-4 flex flex-col items-center gap-3" style={{ backgroundColor: '#f5f5f5' }}>
+          {item.resultUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={item.resultUrl}
+              alt="AI 피팅 결과"
+              className="max-w-full object-contain bg-white"
+              style={{ maxHeight: '60vh', border: '1px solid #e5e5e5' }}
+            />
+          ) : (
+            <div className="w-full h-64 flex items-center justify-center bg-white">
+              <ImageOff className="w-8 h-8 text-[#9e9ea0]" />
+            </div>
+          )}
+          {item.resultUrl && (
+            <a
+              href={item.resultUrl}
+              download={`ai-fitting-${(item.aspectRatio ?? '1x1').replace(':', 'x')}.png`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 px-4 h-9 rounded-full text-[12px] font-bold text-white bg-[#111111] hover:bg-[#333333] transition-colors"
+            >
+              <Download className="w-3.5 h-3.5" />
+              다운로드
+            </a>
+          )}
+        </div>
+      </div>
     </div>
   )
 }

@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import dynamic from 'next/dynamic'
 import Link from 'next/link'
-import { Check, Copy, Share2, MessageSquare, FileCode2, Download, Loader2, ExternalLink, Lock, Unlock, RotateCw, X } from 'lucide-react'
+import { AlertCircle, Check, Copy, Share2, MessageSquare, FileCode2, Download, Loader2, ExternalLink, Lock, Unlock, RotateCw, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { ShareSheet } from '@/components/share-sheet'
 import { ThumbnailGrid, type ThumbnailItem } from '@/components/thumbnail-grid'
@@ -45,6 +45,9 @@ interface ResultCardProps {
   result: GenerationResult
   mode: 'quick' | 'studio'
   projectId?: string | null
+  /** UX-01 — 부분 재생성/AI Fitting 실패 시 상단 배너로 표시 */
+  errorMessage?: string | null
+  onDismissError?: () => void
   onSelectName: (index: number) => void
   onRegenerate?: () => void
   onSave?: () => void
@@ -98,6 +101,8 @@ export function ResultCard({
   result,
   mode,
   projectId,
+  errorMessage,
+  onDismissError,
   onSelectName,
   onRegenerate,
   onSave,
@@ -141,19 +146,22 @@ export function ResultCard({
   // 간편모드 — AI Fitting 클릭 시 업그레이드 CTA 표시
   const [showQuickCta, setShowQuickCta] = useState(false)
 
-  // AI Fitting 이미지 선택 → 상세페이지 hero 섹션 이미지 자동 동기화
-  // selectedFittingUrl 변경 시에만 실행. detailPageSections / onChangeDetailSections 를
-  // deps 에 포함하면 섹션 편집 → 상태 변경 → effect 재실행 → 무한루프 위험.
-  // ref.current 를 렌더 중 업데이트하는 패턴은 react-hooks/refs 위반이므로,
-  // exhaustive-deps disable 로 stale closure 를 명시적으로 허용.
+  // AI Fitting 이미지 선택 → 상세페이지 hero 섹션 이미지 자동 동기화 (TYP-07)
+  // detailPageSections / onChangeDetailSections 를 deps 에 포함하지 않으면 stale
+  // closure 로 사용자가 편집한 다른 섹션이 wipe 될 수 있음. 무한루프는 hero 이미지가
+  // 이미 selectedFittingUrl 과 동일할 때 setter 호출을 가드해서 차단한다.
   useEffect(() => {
     if (!selectedFittingUrl || !detailPageSections || !onChangeDetailSections) return
+    // 이미 동일하면 no-op (가드)
+    const heroIdx = detailPageSections.findIndex((s) => s.type === 'hero')
+    if (heroIdx === -1) return
+    const hero = detailPageSections[heroIdx]
+    if (hero.type === 'hero' && hero.image === selectedFittingUrl) return
     const updated = detailPageSections.map((s) =>
       s.type === 'hero' ? ({ ...s, image: selectedFittingUrl } as DetailSection) : s
     )
     onChangeDetailSections(updated)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedFittingUrl])
+  }, [selectedFittingUrl, detailPageSections, onChangeDetailSections])
 
   const selectedName = result.names[result.selectedNameIndex]?.name ?? ''
 
@@ -224,6 +232,29 @@ export function ResultCard({
 
   return (
     <div className="max-w-5xl mx-auto px-6 py-10">
+      {/* UX-01 — 부분 재생성/AI Fitting 실패 banner (부모가 dismiss 컨트롤) */}
+      {errorMessage && (
+        <div
+          className="mb-4 flex items-start gap-2.5 p-3"
+          role="status"
+          aria-live="polite"
+          style={{ backgroundColor: '#fff5f5', border: '1px solid #fecaca' }}
+        >
+          <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" style={{ color: '#d30005' }} />
+          <p className="flex-1 text-[13px]" style={{ color: '#d30005' }}>
+            {errorMessage}
+          </p>
+          {onDismissError && (
+            <button
+              onClick={onDismissError}
+              aria-label="에러 알림 닫기"
+              className="flex-shrink-0 p-0.5 text-[#9e9ea0] hover:text-[#111111] transition-colors"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          )}
+        </div>
+      )}
       {/* 헤더 */}
       <div className="mb-8 flex items-start justify-between gap-4">
         <div>
@@ -314,6 +345,10 @@ export function ResultCard({
           fittings={aiFittings ?? []}
           selectedFittingUrl={selectedFittingUrl ?? null}
           onSelectHero={onSelectFittingHero ?? (() => {})}
+          // UX-05 — alt 합성용 메타
+          productName={selectedName}
+          category={result.category}
+          keywords={result.keywords}
         />
       </section>
 
@@ -647,9 +682,10 @@ export function ResultCard({
         </Button>
         <Button
           onClick={onSave}
+          title="이 페이지의 인라인 편집은 자동 저장되지 않습니다. 히스토리에서 다시 진입하면 원본으로 복원될 수 있어요."
           className="px-5 rounded-full bg-[#111111] text-white text-[13px] font-semibold hover:bg-[#333333]"
         >
-          저장하기
+          히스토리로
         </Button>
       </div>
     </div>
@@ -758,7 +794,9 @@ function LegacyDetailPagePanel({
       <iframe
         title="상세페이지 미리보기"
         srcDoc={detailPageHtml}
-        sandbox="allow-same-origin"
+        // UX-09 — allow-same-origin 제거 (부모 origin 권한으로 fetch 가능성 차단)
+        sandbox="allow-popups"
+        referrerPolicy="no-referrer"
         className="w-full h-[420px] bg-white"
         style={{ borderBottom: '1px solid #e5e5e5' }}
       />
