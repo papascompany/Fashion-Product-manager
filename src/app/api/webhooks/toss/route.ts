@@ -102,11 +102,12 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Missing orderId' }, { status: 400 })
   }
 
-  // eventId 추출: 공식 eventId > paymentKey > orderId+status (마지막 fallback)
-  const eventId =
-    event.eventId ??
-    data.paymentKey ??
-    `${orderId}:${eventType}:${data.status ?? 'unknown'}`
+  // eventId 추출 (WHK-01 fix): paymentKey 는 '결제' 단위라 DONE 과 이후 CANCEL/
+  // PARTIAL_CANCELED 웹훅에서 동일하다. 그대로 멱등성 키로 쓰면 취소 이벤트가
+  // duplicate_event 로 무시되어 환불 시 플랜 다운그레이드가 안 된다.
+  // → 생애주기(status/eventType)를 키에 포함시켜 상태 전이마다 별개 키가 되게 한다.
+  const lifecycle = data.status ?? eventType ?? 'unknown'
+  const eventId = event.eventId ?? `${data.paymentKey ?? orderId}:${lifecycle}`
 
   // 사용자 fingerprint 없는 최소 로깅 (OPS-03)
   console.log('[Toss Webhook] received', { eventType, status: data.status })
@@ -172,6 +173,12 @@ export async function POST(request: NextRequest) {
           return NextResponse.json({ received: true, idempotent: true })
         }
 
+        if (reason === 'unknown_key') {
+          // WHK-04: pending_orders.key 오설정 — 재시도로 안 고쳐지므로 200 종결 + 알람
+          console.error('[Toss Webhook] unknown_key — pending_orders.key misconfigured')
+          return NextResponse.json({ received: true, rejected: 'unknown_key' })
+        }
+
         // 그 외 미정의 reason → 운영자가 검토하도록 5xx
         console.error('[Toss Webhook] unknown reason:', reason)
         return NextResponse.json(
@@ -188,6 +195,15 @@ export async function POST(request: NextRequest) {
       data.status === 'CANCELED' ||
       data.status === 'PARTIAL_CANCELED'
     ) {
+      // WHK-03: 부분취소(부분환불)는 플랜 전체 다운그레이드 대상이 아니다.
+      // 잔액(balanceAmount)이 남아 있으면 유료 플랜을 유지하고, 전액 취소일 때만 다운그레이드.
+      const isFullCancel =
+        data.status !== 'PARTIAL_CANCELED' || (data.balanceAmount ?? 0) === 0
+      if (!isFullCancel) {
+        console.log('[Toss Webhook] partial cancel with remaining balance — plan retained')
+        return NextResponse.json({ received: true, skipped: 'partial_cancel_retained' })
+      }
+
       const { data: result, error } = await supabase.rpc('apply_payment_cancel', {
         p_order_id: orderId,
         p_event_id: eventId,

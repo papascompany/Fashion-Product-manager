@@ -17,26 +17,13 @@ import type { NextRequest } from 'next/server'
 import { z } from 'zod'
 import { randomUUID } from 'crypto'
 import { createClient, createAdminClient } from '@/lib/supabase/server'
+// WHK-02(prepare) fix: 가격을 중복 정의하지 않고 단일 진실(plan-settings-shared)에서 가져온다.
+// 예전에는 여기 사본과 billing-client 표시값이 어긋날 수 있어(가격 인상 시 청구/표시 불일치)
+// 위험했다. 이제 서버 청구액·UI 표시가 같은 상수를 참조한다.
+import { PLAN_PRICES, TOPUP_PRICES } from '@/lib/plan-settings-shared'
 
 export const runtime = 'nodejs'
 export const maxDuration = 10
-
-// ─── 결제 가격 단일 소스 (billing-client 와 일치) ───────────────────────────
-//
-// ⚠️ 본 트랙은 결제 도메인을 소유한다. billing-client.tsx 의 price 값과 반드시
-//   동일하게 유지해야 한다. 트랙 2 가 billing-client 에서 prepare 호출로
-//   전환할 때 이 단일 SoT 만 참조하도록 정리할 것.
-const PLAN_PRICES: Record<'starter' | 'pro' | 'business', number> = {
-  starter: 19900,
-  pro: 49900,
-  business: 149000,
-}
-
-const TOPUP_PRICES: Record<'topup10' | 'topup30' | 'topup100', number> = {
-  topup10: 3000,
-  topup30: 8000,
-  topup100: 24000,
-}
 
 const PrepareSchema = z
   .object({

@@ -44,9 +44,16 @@ create table if not exists public.pending_orders (
   key             text        not null,
   expected_amount integer     not null check (expected_amount > 0),
   created_at      timestamptz not null default now(),
-  expires_at      timestamptz not null default (now() + interval '15 minutes'),
+  -- WHK-02 fix: 15분은 너무 짧다. Toss 웹훅 재전송(우리 서버 장애 후 지연 재시도) 이나
+  -- 시계 오차로 정당한 DONE 이 만료로 거부되면 사용자가 결제만 하고 크레딧을 못 받는다.
+  -- amount 정확 일치가 진위 검증을 담당하므로 만료 창을 24h 로 넉넉히 둔다.
+  expires_at      timestamptz not null default (now() + interval '24 hours'),
   consumed_at     timestamptz
 );
+
+-- 재실행(dev) 시 기존 테이블의 기본값도 갱신 (prod 는 최초 생성이라 위 default 로 충분)
+alter table public.pending_orders
+  alter column expires_at set default (now() + interval '24 hours');
 
 create index if not exists idx_pending_orders_user
   on public.pending_orders(user_id, created_at desc);
@@ -158,19 +165,11 @@ declare
   v_plan      text;
   v_now       timestamptz := now();
 begin
-  -- ── 1. 멱등성: 이미 처리된 event_id 면 즉시 종료 ───────────────────────
-  insert into public.processed_webhook_events (provider, event_id, order_id)
-    values ('toss', p_event_id, p_order_id)
-    on conflict (provider, event_id) do nothing;
-  get diagnostics v_inserted = row_count;
-  if v_inserted = 0 then
-    return jsonb_build_object(
-      'processed', false,
-      'reason',    'duplicate_event'
-    );
-  end if;
-
-  -- ── 2. pending_orders 매칭 ───────────────────────────────────────────────
+  -- ── 1. pending_orders 매칭 (FOR UPDATE 락) ───────────────────────────────
+  -- WHK-02 fix: 멱등성 event_id INSERT 를 검증 뒤로 미룬다. 예전에는 event_id 를
+  -- 먼저 소각한 뒤 만료/불일치를 검사해서, 15분 만료된 '정당한' DONE 결제가
+  -- 영구 복구 불가였다. 성공 적용에 대한 멱등성은 아래 consumed_at + FOR UPDATE
+  -- 직렬화로 보장되므로, event_id 는 검증 통과 후 최종 가드로만 기록한다.
   select * into v_pending
     from public.pending_orders
    where order_id = p_order_id
@@ -183,6 +182,7 @@ begin
     );
   end if;
 
+  -- 이미 소비된 주문이면 멱등 종료 (재시도된 성공 DONE 은 여기서 걸린다)
   if v_pending.consumed_at is not null then
     return jsonb_build_object(
       'processed', false,
@@ -197,7 +197,7 @@ begin
     );
   end if;
 
-  -- ── 3. amount 정확 일치 ─────────────────────────────────────────────────
+  -- ── 2. amount 정확 일치 ─────────────────────────────────────────────────
   if v_pending.expected_amount <> p_amount then
     return jsonb_build_object(
       'processed',       false,
@@ -212,6 +212,18 @@ begin
     return jsonb_build_object(
       'processed', false,
       'reason',    'unknown_key'
+    );
+  end if;
+
+  -- ── 3. 멱등성 event_id 기록 (검증 통과 후 최종 가드, 동시 중복 DONE 대비) ─────
+  insert into public.processed_webhook_events (provider, event_id, order_id)
+    values ('toss', p_event_id, p_order_id)
+    on conflict (provider, event_id) do nothing;
+  get diagnostics v_inserted = row_count;
+  if v_inserted = 0 then
+    return jsonb_build_object(
+      'processed', false,
+      'reason',    'duplicate_event'
     );
   end if;
 
