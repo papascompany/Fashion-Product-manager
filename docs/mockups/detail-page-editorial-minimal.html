@@ -1,0 +1,500 @@
+<meta charset="utf-8">
+<style>
+  /* =========================================================================
+     ProductCraft AI — 상세페이지 생성 엔진 목업
+     테마: 에디토리얼 미니멀 (무신사/29CM tier) · 캔버스 860px 고정폭
+     한글 타이포는 HTML @font-face 오버레이(AI 이미지에 굽지 않음).
+     프로덕션 서체: 국문 Pretendard Variable / 영문 디스플레이 Fraunces(OFL) 자체호스팅.
+     본 목업은 시스템 폰트 스택으로 근사(로컬 렌더용).
+     ========================================================================= */
+
+  :root {
+    /* 작업대(surround) — 뷰어 테마 인지 */
+    --desk: #E7E3DC;
+    --desk-edge: #D8D2C7;
+    --desk-ink: #4A453D;
+
+    /* 상세페이지 캔버스 토큰(에디토리얼 미니멀) — 고정 페이퍼 팔레트 */
+    --paper: #F7F4EF;
+    --sand:  #EDE6DB;
+    --ink:   #2A2621;
+    --muted: #8C8378;
+    --line:  #DED6C9;
+    --mocha: #7A5C43;
+    --cta:   #1E1A16;
+    --cta-tx:#F7F4EF;
+
+    --serif: "Hoefler Text", "Iowan Old Style", "Apple Garamond", Palatino, "Palatino Linotype", Georgia, serif;
+    --sans: -apple-system, BlinkMacSystemFont, "Pretendard Variable", Pretendard, "Apple SD Gothic Neo", "Segoe UI", system-ui, sans-serif;
+
+    --canvas: 860px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --desk:#16130F; --desk-edge:#241f19; --desk-ink:#9a9084; }
+  }
+  :root[data-theme="dark"]  { --desk:#16130F; --desk-edge:#241f19; --desk-ink:#9a9084; }
+  :root[data-theme="light"] { --desk:#E7E3DC; --desk-edge:#D8D2C7; --desk-ink:#4A453D; }
+
+  * { box-sizing: border-box; }
+
+  .pcworkspace {
+    background:
+      radial-gradient(120% 60% at 50% -10%, var(--desk-edge), transparent 60%),
+      var(--desk);
+    min-height: 100vh;
+    padding: clamp(20px, 5vw, 72px) 16px 0;
+    font-family: var(--sans);
+    color: var(--desk-ink);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  .pcworkspace__cap {
+    max-width: var(--canvas);
+    margin: 0 auto 22px;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px 20px;
+    font-size: 12.5px;
+    letter-spacing: 0.02em;
+  }
+  .pcworkspace__cap b { color: var(--desk-ink); font-weight: 650; }
+  .pcworkspace__cap .muted { opacity: 0.62; }
+  .pcworkspace__cap .tag {
+    font-size: 10.5px; letter-spacing: 0.14em; text-transform: uppercase;
+    padding: 3px 9px; border: 1px solid currentColor; border-radius: 100px; opacity: 0.5;
+  }
+
+  /* ── 캔버스: 실제 상세페이지 (고정 페이퍼) ───────────────────────────── */
+  .dp {
+    width: var(--canvas);
+    max-width: 100%;
+    margin: 0 auto;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--sans);
+    line-height: 1.75;
+    box-shadow: 0 1px 0 var(--desk-edge), 0 40px 90px -50px rgba(20,15,10,0.55);
+    overflow: hidden;
+    /* @860 캔버스를 화면 폭에 맞춰 축소(모바일 다운스케일 시뮬레이션) */
+  }
+  @media (max-width: 900px) {
+    .dp { width: 100%; }
+  }
+
+  .dp * { box-sizing: border-box; }
+
+  /* 섹션 밴드 */
+  .sec { padding: 104px 70px; position: relative; }
+  .sec--sand { background: var(--sand); }
+  .sec--tight { padding: 72px 70px; }
+  @media (max-width: 620px) { .sec { padding: 64px 34px; } .sec--tight{padding:52px 34px;} }
+
+  /* 섹션 라벨 = 실제 서사 순서(에디토리얼 5단계 + 갤러리/스펙)를 인코딩 */
+  .eyebrow {
+    display: flex; align-items: center; gap: 12px;
+    font-size: 12px; letter-spacing: 0.22em; text-transform: uppercase;
+    color: var(--mocha); font-weight: 600; margin: 0 0 22px;
+  }
+  .eyebrow .no { font-family: var(--serif); font-style: italic; font-size: 15px; letter-spacing: 0; color: var(--ink); opacity: 0.5; }
+  .eyebrow .rule { flex: 0 0 34px; height: 1px; background: var(--mocha); opacity: 0.55; }
+
+  .display {
+    font-family: var(--serif);
+    font-weight: 500;
+    letter-spacing: -0.015em;
+    line-height: 1.08;
+    text-wrap: balance;
+    margin: 0;
+    color: var(--ink);
+  }
+  h2.title {
+    font-family: var(--serif); font-weight: 500; letter-spacing: -0.01em;
+    line-height: 1.14; font-size: 38px; margin: 0 0 20px; text-wrap: balance;
+  }
+  @media (max-width:620px){ h2.title{ font-size: 30px; } }
+
+  .lede { font-size: 18px; line-height: 1.85; color: #43403a; margin: 0; max-width: 46ch; }
+  .body { font-size: 16.5px; line-height: 1.85; color: #4a463f; margin: 0; max-width: 60ch; }
+  .cap  { font-size: 13px; letter-spacing: 0.02em; color: var(--muted); }
+
+  /* ── "사진" 컷 블록: CSS 듀오톤 + 그레인 + 컷 슬롯 태그 ─────────────── */
+  .shot {
+    position: relative;
+    border-radius: 4px;
+    overflow: hidden;
+    background: #cfc6b8;
+    isolation: isolate;
+  }
+  .shot::before { /* 그레인 */
+    content:""; position:absolute; inset:0; z-index:2; opacity:0.5; mix-blend-mode:overlay;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='140' height='140'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix type='saturate' values='0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
+  }
+  .shot__slot {
+    position: absolute; z-index: 4; left: 12px; top: 12px;
+    font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; font-weight: 600;
+    color: #f7f4ef; background: rgba(20,15,10,0.44); backdrop-filter: blur(3px);
+    padding: 5px 9px; border-radius: 100px; border: 1px solid rgba(247,244,239,0.28);
+  }
+  /* 듀오톤 프리셋 */
+  .fig-outer   { background: radial-gradient(75% 90% at 62% 26%, #b8ab97 0%, #8f8271 34%, #4b4237 78%, #342d24 100%); }
+  .fig-life    { background: radial-gradient(70% 80% at 38% 30%, #d9cfbd 0%, #b3a58f 40%, #6f6353 82%); }
+  .fig-ghost   { background: linear-gradient(160deg, #efeae0 0%, #d9d0c1 55%, #c3b8a6 100%); }
+  .fig-detail1 { background: radial-gradient(120% 120% at 20% 12%, #9c8f79 0%, #5d5344 60%, #3b3329 100%); }
+  .fig-detail2 { background: repeating-linear-gradient(122deg, #6d6252 0 7px, #7c7060 7px 14px); }
+  .fig-detail3 { background: radial-gradient(90% 90% at 70% 30%, #c9bda8 0%, #8a7d68 60%, #4f4638 100%); }
+  .fig-flat    { background: radial-gradient(80% 100% at 50% 0%, #e7e0d3 0%, #cfc4b1 60%, #b0a48d 100%); }
+  /* 드레이프 암시(부드러운 하이라이트) */
+  .drape::after {
+    content:""; position:absolute; inset:0; z-index:1;
+    background:
+      linear-gradient(105deg, transparent 30%, rgba(255,250,242,0.16) 46%, transparent 60%),
+      linear-gradient(255deg, transparent 40%, rgba(20,15,10,0.18) 78%);
+  }
+
+  /* 텍스트 세이프 존 가이드(히어로) */
+  .safez { position:absolute; z-index:3; left:0; right:0; height:24%; pointer-events:none;
+    border-top:1px dashed rgba(247,244,239,0.5); border-bottom:1px dashed rgba(247,244,239,0.5); }
+  .safez.top { top:0; border-top:0; }
+  .safez.bot { bottom:0; border-bottom:0; }
+  .safez span { position:absolute; right:12px; bottom:6px; font-size:9.5px; letter-spacing:0.14em;
+    text-transform:uppercase; color:rgba(247,244,239,0.72); }
+
+  /* ── HERO ─────────────────────────────────────────────────────────────── */
+  /* shot 자체가 높이를 갖고(고정 px), copy 를 absolute 로 오버레이 —
+     grid/absolute 높이 전달 의존 제거(견고). 상세페이지는 고정폭 래스터라 vh 미사용. */
+  .hero { position: relative; }
+  .hero .shot { position: relative; height: 940px; border-radius: 0; }
+  @media (max-width: 620px) { .hero .shot { height: 560px; } }
+  .hero__copy {
+    position: absolute; z-index: 5; left: 0; right: 0; bottom: 0; padding: 70px;
+    color: #f7f4ef;
+  }
+  .hero__eyebrow { color: rgba(247,244,239,0.86); }
+  .hero__eyebrow .no { color: rgba(247,244,239,0.6); }
+  .hero__eyebrow .rule { background: rgba(247,244,239,0.7); }
+  .hero h1 { font-size: 62px; color: #fbf9f5; margin: 0 0 18px; }
+  .hero__tag { font-size: 18px; line-height: 1.7; color: rgba(247,244,239,0.9); max-width: 40ch; margin: 0; }
+  .hero__scrim { position:absolute; inset:0; z-index:3;
+    background: linear-gradient(to top, rgba(18,13,9,0.72) 0%, rgba(18,13,9,0.12) 42%, transparent 66%); }
+  @media (max-width:620px){ .hero h1{ font-size:40px; } .hero__copy{ padding:34px; } }
+
+  /* ── index-bridge ─────────────────────────────────────────────────────── */
+  .bridge { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0; border-top:1px solid var(--line); border-bottom:1px solid var(--line); }
+  .bridge > div { padding: 34px 26px; border-left: 1px solid var(--line); }
+  .bridge > div:first-child { border-left: 0; padding-left: 0; }
+  .bridge .k { font-family: var(--serif); font-size: 15px; font-style: italic; color: var(--mocha); }
+  .bridge .v { font-size: 19px; font-weight: 600; letter-spacing: -0.01em; margin-top: 8px; color: var(--ink); }
+  .bridge .d { font-size: 13.5px; color: var(--muted); margin-top: 6px; line-height: 1.6; }
+  @media (max-width:620px){ .bridge{ grid-template-columns:1fr; } .bridge>div{ border-left:0; border-top:1px solid var(--line); padding:22px 0;} .bridge>div:first-child{border-top:0;} }
+
+  /* ── split ────────────────────────────────────────────────────────────── */
+  .split { display: grid; grid-template-columns: 1fr 1fr; gap: 44px; align-items: center; }
+  .split.rev { direction: rtl; } .split.rev > * { direction: ltr; }
+  .split .shot { aspect-ratio: 4/5; }
+  @media (max-width:620px){ .split{ grid-template-columns:1fr; gap:26px; } }
+
+  /* ── gallery ──────────────────────────────────────────────────────────── */
+  .gallery { display: grid; grid-template-columns: 2fr 1fr; grid-template-rows: repeat(2, 1fr); gap: 12px; }
+  .gallery .shot:nth-child(1){ grid-row: 1 / span 2; aspect-ratio: auto; }
+  .gallery .shot:nth-child(n+2){ aspect-ratio: 1/1; }
+  @media (max-width:620px){ .gallery{ grid-template-columns:1fr 1fr; } .gallery .shot:nth-child(1){ grid-row:auto; grid-column:1/-1; aspect-ratio:4/3;} }
+
+  /* ── bento (material) ─────────────────────────────────────────────────── */
+  .bento { display: grid; grid-template-columns: repeat(4, 1fr); grid-auto-rows: 150px; gap: 12px; }
+  .bento .cell { position: relative; border-radius: 4px; overflow: hidden; }
+  .bento .cell.big { grid-column: span 2; grid-row: span 2; }
+  .bento .cell.wide { grid-column: span 2; }
+  .bento .txt { background: var(--paper); border: 1px solid var(--line); padding: 20px; display: flex; flex-direction: column; justify-content: space-between; }
+  .bento .txt h4 { font-family: var(--serif); font-size: 20px; font-weight: 500; margin: 0; letter-spacing: -0.01em; }
+  .bento .txt p { font-size: 13px; color: var(--muted); margin: 8px 0 0; line-height: 1.6; }
+  .bento .txt .n { font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--mocha); }
+  @media (max-width:620px){ .bento{ grid-template-columns:1fr 1fr; grid-auto-rows:130px;} .bento .cell.big{grid-column:span 2;} }
+
+  /* ── lookbook ─────────────────────────────────────────────────────────── */
+  .look { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+  .look .shot { aspect-ratio: 3/4; }
+  .look figcaption { font-size: 12px; color: var(--muted); margin-top: 10px; letter-spacing: 0.02em; }
+  .look figure { margin: 0; }
+  @media (max-width:620px){ .look{ grid-template-columns:1fr; } }
+
+  /* ── spec table ───────────────────────────────────────────────────────── */
+  .spectbl { width: 100%; border-collapse: collapse; font-size: 14.5px; }
+  .spectbl caption { text-align: left; font-size: 12px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); padding-bottom: 14px; }
+  .spectbl th, .spectbl td { text-align: left; padding: 14px 12px; border-bottom: 1px solid var(--line); }
+  .spectbl th { font-weight: 600; color: var(--ink); width: 90px; }
+  .spectbl td.num { font-variant-numeric: tabular-nums; text-align: right; color: #43403a; }
+  .spectbl thead th { color: var(--muted); font-weight: 600; font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase; border-bottom: 1.5px solid var(--ink); }
+  .spec-wrap { overflow-x: auto; }
+
+  /* ── trust ────────────────────────────────────────────────────────────── */
+  .trust { display: grid; grid-template-columns: 1.3fr 1fr; gap: 40px; align-items: center; }
+  .stars { color: var(--mocha); letter-spacing: 3px; font-size: 15px; }
+  .quote { font-family: var(--serif); font-size: 21px; line-height: 1.6; font-style: italic; color: var(--ink); margin: 14px 0 10px; text-wrap: balance; }
+  .badges { display: grid; gap: 14px; }
+  .badges .b { display: flex; gap: 12px; align-items: flex-start; padding: 14px 0; border-top: 1px solid var(--line); }
+  .badges .b:first-child { border-top: 0; }
+  .badges .ic { width: 34px; height: 34px; border-radius: 100px; flex: 0 0 34px; background: var(--paper); border: 1px solid var(--line); display: grid; place-items: center; font-family: var(--serif); font-style: italic; color: var(--mocha); }
+  .badges .bt { font-size: 14px; font-weight: 600; }
+  .badges .bd { font-size: 12.5px; color: var(--muted); margin-top: 2px; }
+  @media (max-width:620px){ .trust{ grid-template-columns:1fr; gap:28px;} }
+
+  /* ── CTA ──────────────────────────────────────────────────────────────── */
+  .cta { background: var(--cta); color: var(--cta-tx); text-align: center; }
+  .cta .eyebrow { color: rgba(247,244,239,0.66); justify-content: center; }
+  .cta .eyebrow .rule { background: rgba(247,244,239,0.5); }
+  .cta .eyebrow .no { color: rgba(247,244,239,0.5); }
+  .cta h2 { font-family: var(--serif); font-weight: 500; font-size: 40px; letter-spacing: -0.01em; margin: 0 0 10px; color: #fbf9f5; }
+  .cta .price { font-size: 15px; color: rgba(247,244,239,0.72); margin: 0 0 30px; }
+  .cta .price b { font-size: 30px; color: #fbf9f5; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
+  .cta .price .was { text-decoration: line-through; opacity: 0.5; margin-right: 10px; font-size: 16px; }
+  .cta__btn { display: inline-flex; align-items: center; gap: 12px; background: var(--cta-tx); color: var(--cta); font-weight: 700; font-size: 16px; letter-spacing: 0.02em; padding: 18px 46px; border-radius: 3px; }
+  .cta__btn .ar { font-family: var(--serif); }
+
+  /* ── legal footer ─────────────────────────────────────────────────────── */
+  .legal { background: #efe9df; color: #6f6759; font-size: 11.5px; line-height: 1.9; letter-spacing: 0.01em; padding: 40px 70px; }
+  .legal h5 { font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase; color: #8c8378; margin: 0 0 12px; font-weight: 700; }
+  .legal dl { display: grid; grid-template-columns: 118px 1fr; gap: 5px 14px; margin: 0; }
+  .legal dt { color: #8c8378; } .legal dd { margin: 0; }
+  .legal .ai { margin-top: 18px; padding-top: 14px; border-top: 1px solid #ded6c9; color: #8c8378; }
+  @media (max-width:620px){ .legal{ padding:30px 34px; } .legal dl{grid-template-columns:96px 1fr;} }
+
+  /* ── 디자인 시스템 주석 스트립(캔버스 밖, 명확히 분리) ──────────────── */
+  .dsys { max-width: var(--canvas); margin: 30px auto 60px; color: var(--desk-ink); }
+  .dsys__h { display: flex; align-items: baseline; gap: 12px; font-size: 12px; letter-spacing: 0.18em; text-transform: uppercase; opacity: 0.7; margin-bottom: 16px; }
+  .dsys__h .rule { flex: 1; height: 1px; background: currentColor; opacity: 0.25; }
+  .dsys__grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+  .dcard { background: color-mix(in srgb, var(--desk) 60%, #fff 40%); border: 1px solid var(--desk-edge); border-radius: 6px; padding: 16px; }
+  @media (prefers-color-scheme: dark){ .dcard{ background: color-mix(in srgb, var(--desk) 70%, #000 30%); } }
+  .dcard h6 { margin: 0 0 10px; font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; opacity: 0.6; }
+  .swatches { display: flex; gap: 6px; margin-bottom: 8px; }
+  .sw { width: 26px; height: 26px; border-radius: 4px; border: 1px solid rgba(0,0,0,0.12); }
+  .dcard code { font-size: 11px; opacity: 0.75; }
+  .dcard ul { margin: 0; padding-left: 15px; font-size: 11.5px; line-height: 1.7; opacity: 0.85; }
+  .dcard .big { font-family: var(--serif); font-size: 30px; line-height: 1; }
+  @media (max-width: 720px){ .dsys__grid{ grid-template-columns: 1fr 1fr; } }
+
+  /* 스크롤 리빌(모션 최소, reduced-motion 존중) */
+  .rv { opacity: 0; transform: translateY(14px); transition: opacity .7s ease, transform .7s ease; }
+  .rv.in { opacity: 1; transform: none; }
+  @media (prefers-reduced-motion: reduce){ .rv{ opacity:1; transform:none; transition:none; } }
+</style>
+
+<div class="pcworkspace">
+  <div class="pcworkspace__cap">
+    <span><b>ProductCraft AI</b> <span class="muted">· 상세페이지 생성 엔진 목업</span></span>
+    <span class="muted">테마: 에디토리얼 미니멀 · 캔버스 860px · 샘플 상품</span>
+    <span class="tag">Mockup</span>
+  </div>
+
+  <!-- ===================== 상세페이지 캔버스 ===================== -->
+  <div class="dp">
+
+    <!-- 01 HERO -->
+    <section class="hero">
+      <div class="shot fig-outer drape">
+        <div class="hero__scrim"></div>
+        <div class="safez top"><span>text-safe zone</span></div>
+        <div class="safez bot"><span>text-safe zone</span></div>
+        <span class="shot__slot">연출컷 · AI Fitting</span>
+      </div>
+      <div class="hero__copy">
+        <p class="eyebrow hero__eyebrow"><span class="no">01</span><span class="rule"></span>Atelier Nond · Outerwear</p>
+        <h1 class="display">겨울의 실루엣을<br>천천히 다시 쓰다</h1>
+        <p class="hero__tag">한 겹으로 완성되는 오버사이즈 싱글 코트. 울의 무게가 어깨에서 부드럽게 풀리며, 도시의 겨울을 한결 차분하게 만들어 줍니다.</p>
+      </div>
+    </section>
+
+    <!-- 02 INTRO / EMPATHY -->
+    <section class="sec rv">
+      <p class="eyebrow"><span class="no">02</span><span class="rule"></span>공감 · 이런 겨울, 있으셨죠</p>
+      <div class="split">
+        <div>
+          <h2 class="title">두꺼워질수록<br>둔해지는 겨울이 아쉬웠다면</h2>
+          <p class="body">겹겹이 껴입을수록 실루엣은 무너지고 움직임은 무거워집니다. 이 코트는 한 장으로 그 고민을 덜어냅니다. 도톰한 울 블렌드가 보온을 책임지는 동안, 넉넉한 드롭 숄더가 어떤 이너 위에도 여유로운 라인을 그려 줍니다.</p>
+        </div>
+        <div class="shot fig-life drape"><span class="shot__slot">연출컷 · 라이프스타일</span></div>
+      </div>
+    </section>
+
+    <!-- 03 INDEX / BRIDGE -->
+    <section class="sec--tight sec">
+      <p class="eyebrow"><span class="no">03</span><span class="rule"></span>이 코트를 요약하면</p>
+      <div class="bridge">
+        <div><div class="k">Fabric</div><div class="v">울 62% 블렌드</div><div class="d">묵직한 보온감과 차분한 표면 광택</div></div>
+        <div><div class="k">Fit</div><div class="v">오버사이즈 싱글</div><div class="d">드롭 숄더 · 이너에 관대한 여유</div></div>
+        <div><div class="k">Mood</div><div class="v">에디토리얼 뉴트럴</div><div class="d">오트 · 차콜 · 딥브라운 3색</div></div>
+      </div>
+    </section>
+
+    <!-- 04 PRODUCT GALLERY -->
+    <section class="sec sec--sand rv">
+      <p class="eyebrow"><span class="no">04</span><span class="rule"></span>디테일 · 다각도로 보기</p>
+      <div class="gallery">
+        <div class="shot fig-ghost drape"><span class="shot__slot">상품컷 · 고스트 매너킨</span></div>
+        <div class="shot fig-flat drape"><span class="shot__slot">상품컷 · 플랫레이</span></div>
+        <div class="shot fig-outer drape"><span class="shot__slot">상품컷 · 행거</span></div>
+      </div>
+    </section>
+
+    <!-- 05 FEATURE SPLIT -->
+    <section class="sec rv">
+      <p class="eyebrow"><span class="no">05</span><span class="rule"></span>본문 · 어깨에서 시작되는 여유</p>
+      <div class="split rev">
+        <div class="shot fig-detail1 drape"><span class="shot__slot">설명컷 · 디테일 매크로</span></div>
+        <div>
+          <h2 class="title">드롭 숄더가<br>만드는 편안한 각도</h2>
+          <p class="body">어깨선을 팔 쪽으로 살짝 내려, 긴장 없이 떨어지는 라인을 완성했습니다. 두꺼운 니트를 안에 입어도 당김 없이 들어가고, 벗었을 때는 그 자체로 완결된 실루엣이 남습니다. 겨울 내내 매일 걸치게 되는 이유입니다.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- 06 MATERIAL / BENTO -->
+    <section class="sec sec--sand rv">
+      <p class="eyebrow"><span class="no">06</span><span class="rule"></span>소재 · 손끝으로 확인하는 완성도</p>
+      <div class="bento">
+        <div class="cell big shot fig-detail3 drape"><span class="shot__slot">설명컷 · 원단 질감</span></div>
+        <div class="cell txt"><div class="n">Weave</div><div><h4>촘촘한 멜란지 표면</h4><p>빛에 따라 결이 살아나는 울 블렌드</p></div></div>
+        <div class="cell shot fig-detail2 drape"><span class="shot__slot">설명컷 · 봉제</span></div>
+        <div class="cell wide txt"><div class="n">Finish</div><div><h4>깔끔하게 감춘 안단과 견고한 뿔단추</h4><p>안쪽까지 정돈된 마감이 오래 입을수록 드러납니다</p></div></div>
+      </div>
+    </section>
+
+    <!-- 07 STYLING / LOOKBOOK -->
+    <section class="sec rv">
+      <p class="eyebrow"><span class="no">07</span><span class="rule"></span>스타일링 · 이렇게 입어 보세요</p>
+      <h2 class="title">한 벌로 그리는 세 가지 겨울</h2>
+      <div class="look">
+        <figure><div class="shot fig-outer drape"><span class="shot__slot">연출컷 · 전면</span></div><figcaption>니트 원피스 위에 — 미니멀 데일리</figcaption></figure>
+        <figure><div class="shot fig-life drape"><span class="shot__slot">연출컷 · 측면</span></div><figcaption>와이드 슬랙스와 — 도시적인 출근길</figcaption></figure>
+        <figure><div class="shot fig-detail1 drape"><span class="shot__slot">연출컷 · 후면</span></div><figcaption>데님과 스니커즈로 — 주말의 여유</figcaption></figure>
+      </div>
+    </section>
+
+    <!-- 08 SIZE / SPEC -->
+    <section class="sec sec--sand">
+      <p class="eyebrow"><span class="no">08</span><span class="rule"></span>사이즈 · 스펙</p>
+      <div class="split">
+        <div class="spec-wrap">
+          <table class="spectbl">
+            <caption>실측 (cm) · 단면 기준</caption>
+            <thead><tr><th>사이즈</th><td class="num">어깨</td><td class="num">가슴</td><td class="num">총장</td><td class="num">소매</td></tr></thead>
+            <tbody>
+              <tr><th>S / 1</th><td class="num">52.0</td><td class="num">58.0</td><td class="num">96.5</td><td class="num">60.0</td></tr>
+              <tr><th>M / 2</th><td class="num">54.5</td><td class="num">60.5</td><td class="num">98.0</td><td class="num">61.5</td></tr>
+              <tr><th>L / 3</th><td class="num">57.0</td><td class="num">63.0</td><td class="num">99.5</td><td class="num">63.0</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div>
+          <h2 class="title" style="font-size:26px">소재 &amp; 관리</h2>
+          <p class="body" style="font-size:15px">겉감 울 62% · 폴리에스터 34% · 나일론 4%. 안감 폴리에스터 100%. 드라이클리닝 권장, 보관 시 넉넉한 옷걸이에 걸어 어깨 라인을 지켜 주세요. 모델은 M 사이즈를 착용했습니다 (175cm).</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- 09 TRUST -->
+    <section class="sec rv">
+      <p class="eyebrow"><span class="no">09</span><span class="rule"></span>신뢰 · 먼저 입어 본 이야기</p>
+      <div class="trust">
+        <div>
+          <div class="stars">★★★★★</div>
+          <p class="quote">“가볍게 걸쳤는데 어깨 라인이 예뻐서 겨울 내내 이것만 입게 돼요.”</p>
+          <p class="cap">서울 · 30대 · M 착용 · 실구매 리뷰 1,284건 · 평점 4.9</p>
+        </div>
+        <div class="badges">
+          <div class="b"><div class="ic">i</div><div><div class="bt">정품 · KC 인증 완료</div><div class="bd">국내 봉제 · 시험성적서 보유</div></div></div>
+          <div class="b"><div class="ic">↺</div><div><div class="bt">7일 무료 교환 · 반품</div><div class="bd">사이즈 걱정 없이 받아 보세요</div></div></div>
+          <div class="b"><div class="ic">→</div><div><div class="bt">오늘 출발 · 무료배송</div><div class="bd">오후 2시 이전 주문 시</div></div></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 10 CLOSING (커머스 CTA 없음 — 가격·구매버튼은 판매 플랫폼 몫) -->
+    <section class="sec cta">
+      <p class="eyebrow"><span class="no">10</span><span class="rule"></span>결론 · 이 겨울의 마무리</p>
+      <h2>지금, 한 벌의 여유를</h2>
+      <p style="font-size:16px;line-height:1.75;color:rgba(247,244,239,.82);max-width:42ch;margin:0 auto">한 겹으로 완성되는 오버사이즈 싱글 코트. 매일의 겨울을 한결 차분하게 만들어 줍니다.</p>
+    </section>
+
+    <!-- 11 LEGAL FOOTER -->
+    <footer class="legal">
+      <h5>상품 정보 고시</h5>
+      <dl>
+        <dt>제품명</dt><dd>오버사이즈 울 블렌드 싱글 코트</dd>
+        <dt>제조/수입</dt><dd>ATELIER NOND (대한민국)</dd>
+        <dt>소재</dt><dd>겉감 울 62% · 폴리에스터 34% · 나일론 4% / 안감 폴리에스터 100%</dd>
+        <dt>원산지</dt><dd>대한민국</dd>
+        <dt>KC 인증</dt><dd>해당 없음 (성인 의류) · 세탁 시 드라이클리닝</dd>
+        <dt>A/S</dt><dd>ATELIER NOND 고객센터 · 평일 10:00–17:00</dd>
+      </dl>
+      <p class="ai">본 상세페이지의 이미지는 ProductCraft AI로 생성·조립되었으며, 일부 컷은 AI 이미지 합성(SynthID 워터마크 포함)을 포함합니다. 실제 상품과 색·질감이 다를 수 있습니다.</p>
+    </footer>
+
+  </div>
+  <!-- ===================== /캔버스 ===================== -->
+
+  <!-- ===================== 디자인 시스템 주석 ===================== -->
+  <section class="dsys">
+    <div class="dsys__h">Design System — 이 목업이 증명하는 것 <span class="rule"></span></div>
+    <div class="dsys__grid">
+      <div class="dcard">
+        <h6>컬러 토큰 · 에디토리얼 미니멀</h6>
+        <div class="swatches">
+          <span class="sw" style="background:#F7F4EF" title="--paper"></span>
+          <span class="sw" style="background:#EDE6DB" title="--sand"></span>
+          <span class="sw" style="background:#2A2621" title="--ink"></span>
+          <span class="sw" style="background:#7A5C43" title="--mocha"></span>
+          <span class="sw" style="background:#1E1A16" title="--cta"></span>
+        </div>
+        <code>paper · sand · ink · mocha(accent) · cta</code>
+        <ul style="margin-top:8px"><li>포인트 1색 원칙 (mocha는 라벨/헤어라인만)</li><li>고대비 니어블랙 CTA</li></ul>
+      </div>
+      <div class="dcard">
+        <h6>타이포그래피</h6>
+        <div class="big">Aa 가나</div>
+        <ul style="margin-top:10px">
+          <li>디스플레이 = 세리프 (Fraunces / 목업은 Hoefler)</li>
+          <li>본문·UI = Pretendard Variable</li>
+          <li>스케일 @860: H1 52 · H2 38 · Body 27</li>
+          <li>한글은 HTML 오버레이 (AI 이미지 X)</li>
+        </ul>
+      </div>
+      <div class="dcard">
+        <h6>컷 슬롯 라우팅</h6>
+        <ul>
+          <li><b>상품컷</b> → 썸네일 엔진 (flat·hanger·ghost)</li>
+          <li><b>연출컷</b> → AI Fitting (모델 락)</li>
+          <li><b>설명컷</b> → 디테일 매크로 파생</li>
+          <li>컷 예산 6–9장 · lock seed로 상품 일관성</li>
+        </ul>
+      </div>
+      <div class="dcard">
+        <h6>플랫폼 Export</h6>
+        <ul>
+          <li>캔버스 860px 고정 · 2x 렌더 → 다운스케일</li>
+          <li>스마트스토어 860 / 쿠팡 780</li>
+          <li>세로 3,000px 초과 → 섹션경계 분할</li>
+          <li>누끼·고스트 PNG / 연출 JPEG q82</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+</div>
+
+<script>
+  (function () {
+    var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    var items = document.querySelectorAll('.rv');
+    if (reduce || !('IntersectionObserver' in window)) {
+      items.forEach(function (el) { el.classList.add('in'); });
+      return;
+    }
+    var io = new IntersectionObserver(function (entries) {
+      entries.forEach(function (e) { if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); } });
+    }, { threshold: 0.12, rootMargin: '0px 0px -8% 0px' });
+    items.forEach(function (el) { io.observe(el); });
+  })();
+</script>
