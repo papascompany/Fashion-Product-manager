@@ -13,11 +13,13 @@
  * Nike 디자인 — 0px radius, hairline border
  */
 
-import { useState, useCallback } from 'react'
-import { Plus, GripVertical, MoreHorizontal, Trash2, Download, Save, ExternalLink, X, Loader2, Sparkles } from 'lucide-react'
+import { useState, useCallback, useRef } from 'react'
+import { Plus, GripVertical, MoreHorizontal, Trash2, Download, Save, ExternalLink, X, Loader2, Sparkles, Image as ImageIcon } from 'lucide-react'
 import { EditableText } from '@/components/editable-text'
 import { PointKeywords } from '@/components/point-keywords'
-import type { DetailSection, DetailSectionType } from '@/store/studio'
+import type { DetailSection, DetailSectionType, ShotSlot } from '@/store/studio'
+import { THEMES, DEFAULT_THEME, type ThemeId } from '@/lib/detail-page/themes'
+import { PLATFORM_PRESETS, exportDetailPageAsImages, type PlatformPreset } from '@/lib/detail-page/rasterize'
 
 interface DetailPageEditorProps {
   sections: DetailSection[]
@@ -40,14 +42,31 @@ interface DetailPageEditorProps {
 // ─── 섹션 타입 메타 ─────────────────────────────────────────────────────────
 
 const SECTION_META: Record<DetailSectionType, { label: string; icon: string }> = {
-  hero:        { label: '히어로',         icon: '✦' },
-  features:    { label: '핵심 특징',      icon: '⊞' },
-  description: { label: '상품 소개',      icon: '¶' },
-  keywords:    { label: '검색 키워드',    icon: '#' },
-  reviews:     { label: '리뷰 영역',      icon: '☆' },
-  cta:         { label: 'CTA 버튼',       icon: '→' },
-  text:        { label: '텍스트 블록',    icon: 'T' },
-  image:       { label: '이미지 블록',    icon: '◇' },
+  hero:             { label: '히어로',        icon: '✦' },
+  features:         { label: '핵심 특징',     icon: '⊞' },
+  description:      { label: '상품 소개',     icon: '¶' },
+  keywords:         { label: '검색 키워드',   icon: '#' },
+  reviews:          { label: '리뷰 영역',     icon: '☆' },
+  cta:              { label: 'CTA 링크',      icon: '→' },
+  text:             { label: '텍스트 블록',   icon: 'T' },
+  image:            { label: '이미지 블록',   icon: '◇' },
+  gallery:          { label: '갤러리',        icon: '▦' },
+  'feature-split':  { label: '특징 분할',     icon: '◫' },
+  material:         { label: '소재 상세',     icon: '⊡' },
+  lookbook:         { label: '룩북',          icon: '❏' },
+  'size-spec':      { label: '사이즈 표',     icon: '▭' },
+  trust:            { label: '신뢰 배지',     icon: '✓' },
+  'benefit-banner': { label: '혜택 배너',     icon: '◈' },
+  legal:            { label: '고시 정보',     icon: '§' },
+  closing:          { label: '마감 문구',     icon: '❯' },
+}
+
+// 촬영 슬롯 한글 라벨 (플레이스홀더 표기용)
+const SHOT_SLOT_LABEL: Record<ShotSlot, string> = {
+  productShot: '제품 컷',
+  fitShot:     '착용 컷',
+  detailShot:  '디테일 컷',
+  lifestyle:   '라이프스타일 컷',
 }
 
 // 새 섹션 생성 헬퍼
@@ -59,9 +78,18 @@ function makeNewSection(type: DetailSectionType): DetailSection {
     case 'description': return { id, type, content: '상품 소개 내용을 입력하세요.' }
     case 'keywords':    return { id, type, items: ['키워드'] }
     case 'reviews':     return { id, type, placeholder: '📦 첫 번째 구매자가 되어주세요!' }
-    case 'cta':         return { id, type, label: '지금 구매하기' }
+    case 'cta':         return { id, type, label: '자세히 보기' }
     case 'text':        return { id, type, content: '내용을 입력하세요.' }
     case 'image':       return { id, type, url: '' }
+    case 'gallery':     return { id, type, heading: '갤러리', items: [{ shotSlot: 'productShot' }, { shotSlot: 'detailShot' }] }
+    case 'feature-split': return { id, type, heading: '이 옷의 특징', body: '특징을 설명하는 문구를 입력하세요.', shotSlot: 'fitShot' }
+    case 'material':    return { id, type, heading: '소재와 디테일', cells: [{ kind: 'text', title: '소재', text: '소재 설명을 입력하세요.' }, { kind: 'image', shotSlot: 'detailShot', span: 'big' }] }
+    case 'lookbook':    return { id, type, heading: '룩북', looks: [{ shotSlot: 'lifestyle' }, { shotSlot: 'fitShot' }] }
+    case 'size-spec':   return { id, type, caption: '사이즈 표 (cm)', columns: ['S', 'M', 'L'], rows: [{ label: '총장', values: ['', '', ''] }, { label: '가슴단면', values: ['', '', ''] }], note: '측정 방법에 따라 1~3cm 오차가 있을 수 있습니다.' }
+    case 'trust':       return { id, type, rating: '4.9', quote: '고객 후기를 입력하세요.', quoteMeta: '구매 고객', badges: [{ title: '정품 보증' }, { title: '무료 교환' }] }
+    case 'benefit-banner': return { id, type, text: '지금 주문하면 오늘 출발' }
+    case 'legal':       return { id, type, fields: [{ label: '제품 소재', value: '' }, { label: '제조국', value: '' }], aiNotice: '일부 이미지는 AI로 생성되었습니다.' }
+    case 'closing':     return { id, type, heading: '당신의 무드를 완성하세요', subtext: '' }
   }
 }
 
@@ -77,7 +105,8 @@ export function buildDefaultSections(defaults: NonNullable<DetailPageEditorProps
     mk('description', { content: defaults.description }),
     mk('keywords',    { items: defaults.keywords }),
     mk('reviews',     { placeholder: '📦 첫 번째 구매자가 되어주세요!' }),
-    mk('cta',         { label: '지금 구매하기' }),
+    // 커머스 금지 — 가격/구매버튼 없는 에디토리얼 마감 (closing) 을 권장 마감으로 사용
+    mk('closing',     { heading: '당신의 무드를 완성하세요', subtext: '' }),
   ]
 }
 
@@ -91,6 +120,14 @@ export function DetailPageEditor({ sections, onChange, projectId, defaults }: De
   const [exporting, setExporting] = useState(false)
   const [previewHtml, setPreviewHtml] = useState<string | null>(null)
   const [exportError, setExportError] = useState<string | null>(null)
+
+  // 테마 선택 (조립/미리보기/내보내기 호출 시 themeId 전달)
+  const [themeId, setThemeId] = useState<ThemeId>(DEFAULT_THEME)
+
+  // opt-in 이미지 내보내기 (래스터화) — 자동 아님, 버튼 클릭 시에만
+  const previewFrameRef = useRef<HTMLIFrameElement | null>(null)
+  const [rasterPreset, setRasterPreset] = useState<PlatformPreset>(PLATFORM_PRESETS[0])
+  const [rasterizing, setRasterizing] = useState(false)
 
   // Phase 3.2 — AI 자동 조립
   const [planning, setPlanning] = useState(false)
@@ -113,6 +150,7 @@ export function DetailPageEditor({ sections, onChange, projectId, defaults }: De
           category: '상품',
           keywords: defaults.keywords,
           features: defaults.features,
+          themeId,
           projectId,
         }),
       })
@@ -189,6 +227,7 @@ export function DetailPageEditor({ sections, onChange, projectId, defaults }: De
           category: '상품',
           keywords: extractArr(sections, 'keywords', 'items')   ?? defaults?.keywords ?? [],
           features: extractArr(sections, 'features', 'items')   ?? defaults?.features ?? [],
+          themeId,
           sections,
         }),
       })
@@ -213,6 +252,29 @@ export function DetailPageEditor({ sections, onChange, projectId, defaults }: De
       setExportError(err instanceof Error ? err.message : '내보내기 실패')
     } finally {
       setExporting(false)
+    }
+  }
+
+  // ── opt-in 이미지 내보내기 (래스터화) ──────────────────────────────────────
+  // 자동 실행 금지 — 사용자가 미리보기를 연 뒤 버튼을 눌렀을 때만 실행.
+  // 캡처 대상(el)은 미리보기 iframe 의 실제 렌더 DOM.
+  const handleRasterize = async () => {
+    const el = previewFrameRef.current?.contentDocument?.body
+    if (!el) {
+      setExportError('먼저 미리보기를 연 뒤 이미지로 내보내기를 실행해주세요.')
+      return
+    }
+    setRasterizing(true)
+    setExportError(null)
+    try {
+      const baseName = (extractText(sections, 'hero', 'title') ?? defaults?.productName ?? '상세페이지')
+        .trim()
+        .replace(/[\s/\\?%*:|"<>]+/g, '-')
+      await exportDetailPageAsImages(el, { preset: rasterPreset, fileBaseName: baseName })
+    } catch (err) {
+      setExportError(err instanceof Error ? err.message : '이미지 내보내기 실패')
+    } finally {
+      setRasterizing(false)
     }
   }
 
@@ -271,7 +333,21 @@ export function DetailPageEditor({ sections, onChange, projectId, defaults }: De
 
       {/* 액션 바 */}
       <div className="mt-4 flex items-center justify-between flex-wrap gap-2">
-        <div className="flex items-center gap-2 flex-wrap">
+        <div className="flex items-center gap-3 flex-wrap">
+          {/* 테마 선택 — 조립/미리보기/내보내기 시 themeId 로 전달 */}
+          <label className="inline-flex items-center gap-1.5 text-[12px] font-semibold text-[#707072]">
+            테마
+            <select
+              value={themeId}
+              onChange={(e) => setThemeId(e.target.value as ThemeId)}
+              className="px-2 h-8 text-[12px] font-semibold text-[#111111] bg-white focus:outline-none rounded-full"
+              style={{ border: '1px solid #cacacb' }}
+            >
+              {(Object.values(THEMES)).map((t) => (
+                <option key={t.id} value={t.id}>{t.name}</option>
+              ))}
+            </select>
+          </label>
           <div className="text-[12px] text-[#9e9ea0]">
             {sections.length}개 섹션 · 인라인 편집 · 드래그 정렬
           </div>
@@ -339,13 +415,42 @@ export function DetailPageEditor({ sections, onChange, projectId, defaults }: De
             style={{ border: '1px solid #e5e5e5' }}
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="px-5 py-3 flex items-center justify-between" style={{ borderBottom: '1px solid #e5e5e5' }}>
+            <div className="px-5 py-3 flex items-center justify-between gap-3 flex-wrap" style={{ borderBottom: '1px solid #e5e5e5' }}>
               <div className="text-[13px] font-black text-[#111111]">상세페이지 미리보기</div>
-              <button onClick={() => setPreviewHtml(null)} className="p-1 text-[#707072] hover:text-[#111111]">
-                <X className="w-4 h-4" />
-              </button>
+              {/* opt-in 이미지 내보내기 — 플랫폼 프리셋 선택 후 버튼 클릭 시에만 실행 */}
+              <div className="flex items-center gap-2 flex-wrap">
+                <select
+                  value={rasterPreset.id}
+                  onChange={(e) => {
+                    const next = PLATFORM_PRESETS.find((p) => p.id === e.target.value)
+                    if (next) setRasterPreset(next)
+                  }}
+                  disabled={rasterizing}
+                  className="px-2 h-8 text-[12px] font-semibold text-[#111111] bg-white focus:outline-none rounded-full disabled:opacity-50"
+                  style={{ border: '1px solid #cacacb' }}
+                  title="내보낼 판매 플랫폼 규격"
+                >
+                  {PLATFORM_PRESETS.map((p) => (
+                    <option key={p.id} value={p.id}>{p.label} · {p.width}px</option>
+                  ))}
+                </select>
+                <button
+                  onClick={handleRasterize}
+                  disabled={rasterizing}
+                  className="inline-flex items-center gap-1.5 px-3 h-8 rounded-full text-[12px] font-semibold text-[#111111] hover:bg-[#f5f5f5] transition-colors disabled:opacity-50"
+                  style={{ border: '1px solid #cacacb' }}
+                  title="현재 미리보기를 플랫폼 규격 이미지(ZIP)로 내보냅니다"
+                >
+                  {rasterizing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ImageIcon className="w-3.5 h-3.5" />}
+                  이미지로 내보내기
+                </button>
+                <button onClick={() => setPreviewHtml(null)} className="p-1 text-[#707072] hover:text-[#111111]">
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
             </div>
             <iframe
+              ref={previewFrameRef}
               title="상세페이지 미리보기"
               srcDoc={previewHtml}
               sandbox="allow-same-origin"
@@ -665,7 +770,232 @@ function SectionBody({
           </div>
         </div>
       )
+
+    // ─── 상세페이지 엔진 신규 유형 ──────────────────────────────────────────
+    case 'gallery':
+      return (
+        <div>
+          <EditableText
+            value={section.heading ?? ''}
+            onSave={(v) => onUpdate({ heading: v || undefined } as Partial<DetailSection>)}
+            maxLength={40}
+            className="text-[16px] font-bold text-[#111111] mb-2 block"
+            placeholder="갤러리 제목 (선택)"
+            showEditIcon={false}
+          />
+          <div className="grid grid-cols-2 gap-2">
+            {section.items.map((it, i) => (
+              <ShotPlaceholder key={i} shotSlot={it.shotSlot} url={it.url} caption={it.caption} />
+            ))}
+          </div>
+        </div>
+      )
+
+    case 'feature-split':
+      return (
+        <div className={`flex gap-3 ${section.reverse ? 'flex-row-reverse' : ''}`}>
+          <div className="flex-1">
+            <ShotPlaceholder shotSlot={section.shotSlot} />
+          </div>
+          <div className="flex-1">
+            <EditableText
+              value={section.heading}
+              onSave={(v) => onUpdate({ heading: v } as Partial<DetailSection>)}
+              maxLength={40}
+              className="text-[15px] font-bold text-[#111111] mb-1 block"
+              placeholder="제목"
+              showEditIcon={false}
+            />
+            <EditableText
+              value={section.body}
+              onSave={(v) => onUpdate({ body: v } as Partial<DetailSection>)}
+              multiline
+              maxLength={600}
+              className="text-[13px] text-[#111111] leading-relaxed whitespace-pre-wrap block"
+              placeholder="특징 설명"
+              showEditIcon={false}
+            />
+          </div>
+        </div>
+      )
+
+    case 'material':
+      return (
+        <div>
+          <EditableText
+            value={section.heading ?? ''}
+            onSave={(v) => onUpdate({ heading: v || undefined } as Partial<DetailSection>)}
+            maxLength={40}
+            className="text-[16px] font-bold text-[#111111] mb-2 block"
+            placeholder="소재 섹션 제목 (선택)"
+            showEditIcon={false}
+          />
+          <div className="grid grid-cols-2 gap-2">
+            {section.cells.map((c, i) =>
+              c.kind === 'image' ? (
+                <ShotPlaceholder key={i} shotSlot={c.shotSlot ?? 'detailShot'} />
+              ) : (
+                <div key={i} className="p-3" style={{ border: '1px solid #e5e5e5', backgroundColor: '#fafafa' }}>
+                  {c.title && <div className="text-[13px] font-bold text-[#111111]">{c.title}</div>}
+                  {c.text && <div className="text-[12px] text-[#707072] mt-1 whitespace-pre-wrap">{c.text}</div>}
+                </div>
+              )
+            )}
+          </div>
+        </div>
+      )
+
+    case 'lookbook':
+      return (
+        <div>
+          <EditableText
+            value={section.heading ?? ''}
+            onSave={(v) => onUpdate({ heading: v || undefined } as Partial<DetailSection>)}
+            maxLength={40}
+            className="text-[16px] font-bold text-[#111111] mb-2 block"
+            placeholder="룩북 제목 (선택)"
+            showEditIcon={false}
+          />
+          <div className="grid grid-cols-3 gap-2">
+            {section.looks.map((lk, i) => (
+              <ShotPlaceholder key={i} shotSlot={lk.shotSlot} caption={lk.caption} />
+            ))}
+          </div>
+        </div>
+      )
+
+    case 'size-spec':
+      return (
+        <div>
+          {section.caption && <div className="text-[13px] font-bold text-[#111111] mb-2">{section.caption}</div>}
+          <div className="overflow-x-auto">
+            <table className="w-full text-[12px]" style={{ borderCollapse: 'collapse' }}>
+              <thead>
+                <tr>
+                  <th className="px-2 py-1 text-left text-[#707072]" style={{ border: '1px solid #e5e5e5' }}>구분</th>
+                  {section.columns.map((col, i) => (
+                    <th key={i} className="px-2 py-1 text-[#707072]" style={{ border: '1px solid #e5e5e5' }}>{col}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {section.rows.map((r, ri) => (
+                  <tr key={ri}>
+                    <td className="px-2 py-1 font-semibold text-[#111111]" style={{ border: '1px solid #e5e5e5' }}>{r.label}</td>
+                    {r.values.map((v, vi) => (
+                      <td key={vi} className="px-2 py-1 text-center text-[#111111]" style={{ border: '1px solid #e5e5e5' }}>{v || '—'}</td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {section.note && <div className="text-[11px] text-[#9e9ea0] mt-2">{section.note}</div>}
+        </div>
+      )
+
+    case 'trust':
+      return (
+        <div className="p-4 text-center" style={{ border: '1px solid #e5e5e5', backgroundColor: '#fafafa' }}>
+          {section.rating && <div className="text-[20px] font-black text-[#111111]">★ {section.rating}</div>}
+          {section.quote && <div className="text-[13px] text-[#111111] mt-2">“{section.quote}”</div>}
+          {section.quoteMeta && <div className="text-[11px] text-[#9e9ea0] mt-1">— {section.quoteMeta}</div>}
+          <div className="flex flex-wrap gap-2 justify-center mt-3">
+            {section.badges.map((b, i) => (
+              <span
+                key={i}
+                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold"
+                style={{ backgroundColor: '#ffffff', color: '#111111', border: '1px solid #e5e5e5' }}
+              >
+                {b.title}
+                {b.desc && <span className="text-[#9e9ea0]">· {b.desc}</span>}
+              </span>
+            ))}
+          </div>
+        </div>
+      )
+
+    case 'benefit-banner':
+      return (
+        <div className="px-4 py-3 text-center rounded" style={{ backgroundColor: '#111111' }}>
+          <EditableText
+            value={section.text}
+            onSave={(v) => onUpdate({ text: v } as Partial<DetailSection>)}
+            maxLength={60}
+            className="text-[13px] font-bold text-white block"
+            placeholder="혜택 문구"
+            showEditIcon={false}
+          />
+        </div>
+      )
+
+    case 'legal':
+      return (
+        <div>
+          <div className="space-y-1">
+            {section.fields.map((f, i) => (
+              <div key={i} className="flex text-[12px]">
+                <span className="w-24 shrink-0 text-[#9e9ea0]">{f.label}</span>
+                <span className="text-[#111111]">{f.value || '—'}</span>
+              </div>
+            ))}
+          </div>
+          {section.aiNotice && <div className="text-[11px] text-[#9e9ea0] mt-2">{section.aiNotice}</div>}
+        </div>
+      )
+
+    case 'closing':
+      // 커머스 금지 — 에디토리얼 마감 문구만. 가격/구매버튼 렌더 안 함.
+      return (
+        <div className="text-center py-4">
+          <EditableText
+            value={section.heading}
+            onSave={(v) => onUpdate({ heading: v } as Partial<DetailSection>)}
+            maxLength={60}
+            className="text-[18px] font-black text-[#111111] block"
+            placeholder="마감 문구"
+            showEditIcon={false}
+          />
+          <div className="mt-2">
+            <EditableText
+              value={section.subtext ?? ''}
+              onSave={(v) => onUpdate({ subtext: v || undefined } as Partial<DetailSection>)}
+              maxLength={120}
+              className="text-[13px] text-[#707072] block"
+              placeholder="보조 문구 (선택)"
+              showEditIcon={false}
+            />
+          </div>
+        </div>
+      )
+
+    default: {
+      // exhaustive guard — 새 유형 추가 시 컴파일 에러로 누락 방지
+      const _exhaustive: never = section
+      return _exhaustive
+    }
   }
+}
+
+// ─── 촬영 슬롯 플레이스홀더 (이미지 자리) ────────────────────────────────────
+
+function ShotPlaceholder({ shotSlot, url, caption }: { shotSlot: ShotSlot; url?: string; caption?: string }) {
+  return (
+    <figure className="m-0">
+      {url ? (
+        /* eslint-disable-next-line @next/next/no-img-element */
+        <img src={url} alt={caption ?? SHOT_SLOT_LABEL[shotSlot]} className="w-full object-contain" style={{ border: '1px solid #e5e5e5' }} />
+      ) : (
+        <div
+          className="flex items-center justify-center text-[11px] text-[#c5c5c7]"
+          style={{ height: '140px', backgroundColor: '#f8f8f8', border: '1px dashed #e0e0e0' }}
+        >
+          {SHOT_SLOT_LABEL[shotSlot]}
+        </div>
+      )}
+      {caption && <figcaption className="text-[11px] text-[#9e9ea0] mt-1">{caption}</figcaption>}
+    </figure>
+  )
 }
 
 // ─── 키워드 chip 편집기 ─────────────────────────────────────────────────────
@@ -723,7 +1053,12 @@ function KeywordsEditor({ items, onChange }: { items: string[]; onChange: (next:
 // ─── 섹션 추가 픽커 ─────────────────────────────────────────────────────────
 
 function SectionPicker({ onPick }: { onPick: (t: DetailSectionType) => void }) {
-  const types: DetailSectionType[] = ['hero', 'features', 'description', 'text', 'keywords', 'image', 'reviews', 'cta']
+  const types: DetailSectionType[] = [
+    'hero', 'features', 'description', 'text',
+    'feature-split', 'gallery', 'lookbook', 'material', 'size-spec',
+    'trust', 'benefit-banner', 'keywords', 'image', 'legal', 'reviews',
+    'closing', 'cta',
+  ]
   return (
     <div className="flex flex-wrap gap-1.5">
       {types.map((t) => (

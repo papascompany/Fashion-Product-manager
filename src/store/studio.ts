@@ -4,15 +4,77 @@ import type { UserIntent } from '@/lib/ai/types'
 
 // ─── v1.1 Phase 2 — Detail Page Editor 섹션 타입 ───────────────────────────
 
+// ─── 상세페이지 엔진 — 촬영 슬롯(shot slot) ──────────────────────────────────
+// 섹션 이미지 자리마다 어떤 종류의 컷을 채울지 지정 (productShot/fitShot/detailShot/lifestyle)
+export type ShotSlot = 'productShot' | 'fitShot' | 'detailShot' | 'lifestyle'
+
 export type DetailSection =
-  | { id: string; type: 'hero';        title: string; tagline: string; image?: string }
-  | { id: string; type: 'features';    heading: string; items: string[] }
-  | { id: string; type: 'description'; content: string }
-  | { id: string; type: 'keywords';    items: string[] }
-  | { id: string; type: 'reviews';     placeholder: string }
-  | { id: string; type: 'cta';         label: string; url?: string }
-  | { id: string; type: 'text';        heading?: string; content: string }
-  | { id: string; type: 'image';       url: string; caption?: string }
+  | { id: string; type: 'hero';        title: string; tagline: string; image?: string; shotSlot?: ShotSlot }
+  | { id: string; type: 'features';    heading: string; items: string[]; shotSlot?: ShotSlot }
+  | { id: string; type: 'description'; content: string; shotSlot?: ShotSlot }
+  | { id: string; type: 'keywords';    items: string[]; shotSlot?: ShotSlot }
+  | { id: string; type: 'reviews';     placeholder: string; shotSlot?: ShotSlot }
+  | { id: string; type: 'cta';         label: string; url?: string; shotSlot?: ShotSlot }
+  | { id: string; type: 'text';        heading?: string; content: string; shotSlot?: ShotSlot }
+  | { id: string; type: 'image';       url: string; caption?: string; shotSlot?: ShotSlot }
+  // ─── 상세페이지 엔진 신규 유형 (editorial layout blocks) ───────────────────
+  | {
+      id: string
+      type: 'gallery'
+      heading?: string
+      items: { url?: string; shotSlot: ShotSlot; caption?: string }[]
+    }
+  | {
+      id: string
+      type: 'feature-split'
+      heading: string
+      body: string
+      shotSlot: ShotSlot
+      reverse?: boolean
+    }
+  | {
+      id: string
+      type: 'material'
+      heading?: string
+      cells: {
+        kind: 'image' | 'text'
+        shotSlot?: ShotSlot
+        title?: string
+        text?: string
+        span?: 'big' | 'wide' | 'normal'
+      }[]
+    }
+  | {
+      id: string
+      type: 'lookbook'
+      heading?: string
+      looks: { shotSlot: ShotSlot; caption?: string }[]
+    }
+  | {
+      id: string
+      type: 'size-spec'
+      caption?: string
+      columns: string[]
+      rows: { label: string; values: string[] }[]
+      note?: string
+    }
+  | {
+      id: string
+      type: 'trust'
+      rating?: string
+      quote?: string
+      quoteMeta?: string
+      badges: { title: string; desc?: string }[]
+    }
+  | { id: string; type: 'benefit-banner'; text: string }
+  | {
+      id: string
+      type: 'legal'
+      fields: { label: string; value: string }[]
+      aiNotice?: string
+    }
+  // 커머스 없는 에디토리얼 마감 (가격/구매버튼 없음)
+  | { id: string; type: 'closing'; heading: string; subtext?: string }
 
 export type DetailSectionType = DetailSection['type']
 export type SectionKind = 'naming' | 'tagline' | 'description'
