@@ -1,4 +1,4 @@
-# 다음 세션 시작 프롬프트 (2026-07-11 갱신)
+# 다음 세션 시작 프롬프트 (2026-07-13 갱신)
 
 > 새 세션 첫 메시지로 이 파일 내용을 붙여넣거나 "docs/NEXT_SESSION_PROMPT.md 읽고 이어서 진행" 이라고 지시하세요.
 
@@ -26,7 +26,7 @@
 ## 2. 브랜치 3개 (모두 main 미머지)
 - **`main` = `621a9cf`** — 현 prod 베이스라인.
 - **`audit-immediate-thisweek` = `2f1157f`** — 감사 86 finding 조치(critical 8 + 71) + pre-merge fix(BLOCKER: 013 RLS 가드 current_user 기준, webhook 멱등성/부분취소). preview READY. 🚧 **머지 전제: Supabase 마이그레이션 013→014→015→016 을 prod 에 순서대로 적용**(안 하면 결제·admin 500). 절차·이월: 그 브랜치의 `docs/MIGRATION_GUIDE_013_014_015.md`, `docs/PREMERGE_REVIEW_FIXES.md`. 적용 후 013 회귀검증(quick 생성 → credits_left 감소) + webhook smoke → merge.
-- **`feat/detail-page-engine` = `033898b`** ← **현재 작업 브랜치**. 상세페이지 엔진 PRD+목업+Phase1. preview READY. 감사와 독립.
+- **`feat/detail-page-engine` = `7153625`** ← **현재 작업 브랜치**. 상세페이지 엔진 PRD+목업+Phase1+**Phase2(컷 오케스트레이션+렌더 승격)**. preview READY. 감사와 독립.
 
 ## 3. 현재 작업: 상세페이지 생성 엔진 (feat/detail-page-engine)
 목표: 상품 특징 반영 **1페이지 버티컬 상세페이지를 디자이너급 퀄리티로 자동 생성**.
@@ -45,12 +45,22 @@
 - `src/components/detail-page-editor/index.tsx` — themeSelector + 신규섹션 렌더 + opt-in "이미지로 내보내기".
 - `src/lib/prompts/detail-page-plan.ts` — 에디토리얼 5단계 + shotSlot 배정 + closing.
 
+**Phase 2 완료(7153625, preview READY)**:
+- `src/lib/ai/image/prompt-builder.ts` — ShotPreset 6종(flat-lay/hanger/ghost-mannequin/detail-macro/hero-object/lifestyle) + 텍스트 세이프 존 + `buildConsistencyBlock`(마스터 레퍼런스·화이트밸런스 앵커).
+- lock seed: `ImageGenParams.seed` → Gemini `generationConfig.seed`. thumbnail/ai-fitting 라우트 `lockSeed`, store `ensureShotLockSeed()`(프로젝트당 1회).
+- AI Fitting: `shotVariant`(front/side/back/lifestyle) + 모델 프로필 락 가드레일(`lockSeed` 전달 시 자동 활성).
+- `src/lib/detail-page/shot-plan.ts`(신규) — 빈 슬롯 추출(예산 9컷)·엔진/프리셋/비율 매핑·`applyShotResult` write-back·크레딧 추정.
+- `src/components/detail-page-editor/shot-panel.tsx`(신규) — "AI 컷 일괄 생성"(3건 동시 배치, 기존 thumbnail/ai-fitting 엔드포인트만 사용 — 신규 크레딧 경로 없음).
+- 섹션 url 확장: feature-split/material 셀/lookbook look (store·LLM zod·라우트 zod·조립 렌더러·편집기 동기).
+- `render-service/`(신규) — VPS Playwright ZIP 렌더 마이크로서비스(Dockerfile+배포 가이드) + `/api/render/detail-page` 프록시(`DETAIL_RENDER_URL/TOKEN`, 미구성 시 편집기 클라이언트 래스터화 자동 폴백).
+
 **Phase 2 이후 follow-up**:
-- 컷 오케스트레이션(상품 마스터 레퍼런스 + lock seed + AI Fitting 모델 프로필 락 → 컷 간 상품 일관성; prompt-builder flat/hanger/ghost 프리셋, ai-fitting 모델락).
-- 래스터화 승격: 클라이언트(브라우저 캔버스 한계) → **VPS Playwright `/render`**(오너 Vultr VPS "워커 오프로드") 또는 Vercel `@sparticuz/chromium`.
+- 🚧 **render-service VPS 실배포** (사용자/오너 작업): `render-service/README.md` 절차 — docker build → RENDER_TOKEN 주입 실행 → Vercel env `DETAIL_RENDER_URL`/`DETAIL_RENDER_TOKEN` 등록. 미배포여도 클라이언트 폴백으로 무해.
+- 컷 오케스트레이션 심화: 상품 마스터 레퍼런스 **세트**(정면+디테일+컬러칩 자동 파생 다중 레퍼런스 동봉), A컷 자동선별·카피↔이미지 페어링.
 - 세리프 폰트 바이너리(현 system fallback): OFL Fraunces/Noto Serif KR self-host(CSP `font-src 'self'`).
 - material 셀 인라인 편집(현 read-only), 편집기 iframe sandbox 강화.
-- **크레딧 번들 단가**(상세페이지=6~9컷+조립 → 2크레딧 부족) — 오너 결정.
+- **크레딧 번들 단가**(상세페이지=6~9컷, 현행 단가로는 컷당 2~3크레딧 → 9컷 ≈ 24크레딧) — 오너 결정. 확정 시 `shot-plan.ts estimateShotCredits` + 서버 가드 갱신.
+- 실사용 E2E: 실제 계정으로 스튜디오 → 상세페이지 → "AI 컷 일괄 생성" → 미리보기/내보내기 스모크 (preview 빌드만으로는 런타임 미검증).
 
 ## 4. 오케스트레이션 교훈
 - 병렬 서브에이전트 ~12 동시 → Anthropic rate/session limit. **3~4 동시 배치**, 배치 간 sequential. Workflow resume 는 캐시 재생(한도 도달 시 resume).
@@ -58,9 +68,10 @@
 - 돈/RLS/인증 코드는 산출 후 **머지 전 적대검증 리뷰 필수**.
 
 ## 5. 다음 후보 (사용자 선택)
-1. **상세페이지 Phase 2** — 컷 오케스트레이션 + VPS 렌더.
+1. **상세페이지 실사용 E2E 스모크** — preview 에서 실제 계정으로 컷 일괄 생성 → 미리보기 → 내보내기 검증.
 2. **감사 브랜치 머지** — 마이그레이션 013→016 적용(사용자) → smoke → main merge.
-3. **오너 결정 정리** — 크레딧 번들 단가 · 세리프 라이선스 · 래스터화 인프라.
-4. 목업 추가 카테고리(가방/신발/뷰티) 또는 테마 심화.
+3. **render-service VPS 배포** — `render-service/README.md` 절차 (docker + Vercel env 2개).
+4. **오너 결정 정리** — 크레딧 번들 단가(9컷≈24크레딧 이슈) · 세리프 라이선스 · 쿠팡 대표컷 파이프.
+5. Phase 2 심화 — 마스터 레퍼런스 세트 자동 파생 · A컷 자동선별, 또는 detail-page-engine → main 머지.
 
-마지막 커밋: `033898b feat(detail-page): Phase 1` (feat/detail-page-engine, preview READY).
+마지막 커밋: `7153625 feat(detail-page): Phase 2 — 컷 오케스트레이션 + VPS Playwright 렌더 승격` (feat/detail-page-engine, preview READY).
