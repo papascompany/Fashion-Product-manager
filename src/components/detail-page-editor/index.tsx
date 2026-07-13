@@ -17,6 +17,7 @@ import { useState, useCallback, useRef } from 'react'
 import { Plus, GripVertical, MoreHorizontal, Trash2, Download, Save, ExternalLink, X, Loader2, Sparkles, Image as ImageIcon } from 'lucide-react'
 import { EditableText } from '@/components/editable-text'
 import { PointKeywords } from '@/components/point-keywords'
+import { ShotOrchestrationPanel } from '@/components/detail-page-editor/shot-panel'
 import type { DetailSection, DetailSectionType, ShotSlot } from '@/store/studio'
 import { THEMES, DEFAULT_THEME, type ThemeId } from '@/lib/detail-page/themes'
 import { PLATFORM_PRESETS, exportDetailPageAsImages, type PlatformPreset } from '@/lib/detail-page/rasterize'
@@ -257,20 +258,24 @@ export function DetailPageEditor({ sections, onChange, projectId, defaults }: De
 
   // ── opt-in 이미지 내보내기 (래스터화) ──────────────────────────────────────
   // 자동 실행 금지 — 사용자가 미리보기를 연 뒤 버튼을 눌렀을 때만 실행.
-  // 캡처 대상(el)은 미리보기 iframe 의 실제 렌더 DOM.
+  // Phase 2: 서버 렌더(VPS Playwright) 우선 시도 → 미구성(501)/실패 시
+  // 클라이언트 html-to-image 래스터화로 자동 폴백.
   const handleRasterize = async () => {
     const el = previewFrameRef.current?.contentDocument?.body
-    if (!el) {
+    if (!el || !previewHtml) {
       setExportError('먼저 미리보기를 연 뒤 이미지로 내보내기를 실행해주세요.')
       return
     }
     setRasterizing(true)
     setExportError(null)
+    const baseName = (extractText(sections, 'hero', 'title') ?? defaults?.productName ?? '상세페이지')
+      .trim()
+      .replace(/[\s/\\?%*:|"<>]+/g, '-')
     try {
-      const baseName = (extractText(sections, 'hero', 'title') ?? defaults?.productName ?? '상세페이지')
-        .trim()
-        .replace(/[\s/\\?%*:|"<>]+/g, '-')
-      await exportDetailPageAsImages(el, { preset: rasterPreset, fileBaseName: baseName })
+      const served = await tryServerRasterize(previewHtml, rasterPreset, baseName)
+      if (!served) {
+        await exportDetailPageAsImages(el, { preset: rasterPreset, fileBaseName: baseName })
+      }
     } catch (err) {
       setExportError(err instanceof Error ? err.message : '이미지 내보내기 실패')
     } finally {
@@ -290,6 +295,9 @@ export function DetailPageEditor({ sections, onChange, projectId, defaults }: De
 
   return (
     <>
+      {/* Phase 2 — 빈 촬영 슬롯 일괄 생성 (컷 오케스트레이션) */}
+      <ShotOrchestrationPanel sections={sections} onChange={onChange} projectId={projectId} />
+
       <div style={{ border: '1px solid #e5e5e5', backgroundColor: '#ffffff' }}>
         {sections.map((section, index) => (
           <div key={section.id}>
@@ -795,7 +803,7 @@ function SectionBody({
       return (
         <div className={`flex gap-3 ${section.reverse ? 'flex-row-reverse' : ''}`}>
           <div className="flex-1">
-            <ShotPlaceholder shotSlot={section.shotSlot} />
+            <ShotPlaceholder shotSlot={section.shotSlot} url={section.url} />
           </div>
           <div className="flex-1">
             <EditableText
@@ -833,7 +841,7 @@ function SectionBody({
           <div className="grid grid-cols-2 gap-2">
             {section.cells.map((c, i) =>
               c.kind === 'image' ? (
-                <ShotPlaceholder key={i} shotSlot={c.shotSlot ?? 'detailShot'} />
+                <ShotPlaceholder key={i} shotSlot={c.shotSlot ?? 'detailShot'} url={c.url} />
               ) : (
                 <div key={i} className="p-3" style={{ border: '1px solid #e5e5e5', backgroundColor: '#fafafa' }}>
                   {c.title && <div className="text-[13px] font-bold text-[#111111]">{c.title}</div>}
@@ -858,7 +866,7 @@ function SectionBody({
           />
           <div className="grid grid-cols-3 gap-2">
             {section.looks.map((lk, i) => (
-              <ShotPlaceholder key={i} shotSlot={lk.shotSlot} caption={lk.caption} />
+              <ShotPlaceholder key={i} shotSlot={lk.shotSlot} url={lk.url} caption={lk.caption} />
             ))}
           </div>
         </div>
@@ -1076,6 +1084,43 @@ function SectionPicker({ onPick }: { onPick: (t: DetailSectionType) => void }) {
 }
 
 // ─── 헬퍼 ───────────────────────────────────────────────────────────────────
+
+/**
+ * 서버 렌더(VPS Playwright) 시도. 성공 시 ZIP 다운로드 후 true.
+ * 미구성(501)·업스트림 실패(502) 등 fallback 신호면 false (클라이언트 폴백).
+ */
+async function tryServerRasterize(
+  html: string,
+  preset: PlatformPreset,
+  baseName: string,
+): Promise<boolean> {
+  try {
+    const res = await fetch('/api/render/detail-page', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        html,
+        width: preset.width,
+        maxSliceHeight: preset.maxSliceHeight,
+        format: preset.format === 'png' ? 'png' : 'jpeg',
+        quality: preset.quality,
+      }),
+    })
+    if (!res.ok) return false // 501(미구성)/502(업스트림 실패) → 클라이언트 폴백
+    const blob = await res.blob()
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${baseName}.zip`
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    setTimeout(() => URL.revokeObjectURL(url), 0)
+    return true
+  } catch {
+    return false // 네트워크 오류 → 클라이언트 폴백
+  }
+}
 
 function extractText(sections: DetailSection[], type: DetailSectionType, field: string): string | undefined {
   const s = sections.find((x) => x.type === type)

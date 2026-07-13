@@ -30,11 +30,12 @@ const galleryItemSchema = z.object({
 const materialCellSchema = z.object({
   kind: z.enum(['image', 'text']),
   shotSlot: shotSlotSchema.optional(),
+  url: z.string().optional(),
   title: z.string().optional(),
   text: z.string().optional(),
   span: z.enum(['big', 'wide', 'normal']).optional(),
 })
-const lookSchema = z.object({ shotSlot: shotSlotSchema, caption: z.string().optional() })
+const lookSchema = z.object({ shotSlot: shotSlotSchema, url: z.string().optional(), caption: z.string().optional() })
 const specRowSchema = z.object({ label: z.string(), values: z.array(z.string()) })
 const trustBadgeSchema = z.object({ title: z.string(), desc: z.string().optional() })
 const legalFieldSchema = z.object({ label: z.string(), value: z.string() })
@@ -53,7 +54,7 @@ const SectionSchema = z.discriminatedUnion('type', [
   z.object({ id: z.string(), type: z.literal('text'),        heading: z.string().optional(), content: z.string(), shotSlot: shotSlotSchema.optional() }),
   z.object({ id: z.string(), type: z.literal('image'),       url: z.string(), caption: z.string().optional(), shotSlot: shotSlotSchema.optional() }),
   z.object({ id: z.string(), type: z.literal('gallery'),     heading: z.string().optional(), items: z.array(galleryItemSchema) }),
-  z.object({ id: z.string(), type: z.literal('feature-split'), heading: z.string(), body: z.string(), shotSlot: shotSlotSchema, reverse: z.boolean().optional() }),
+  z.object({ id: z.string(), type: z.literal('feature-split'), heading: z.string(), body: z.string(), shotSlot: shotSlotSchema, url: z.string().optional(), reverse: z.boolean().optional() }),
   z.object({ id: z.string(), type: z.literal('material'),    heading: z.string().optional(), cells: z.array(materialCellSchema) }),
   z.object({ id: z.string(), type: z.literal('lookbook'),    heading: z.string().optional(), looks: z.array(lookSchema) }),
   z.object({ id: z.string(), type: z.literal('size-spec'),   caption: z.string().optional(), columns: z.array(z.string()), rows: z.array(specRowSchema), note: z.string().optional() }),
@@ -264,7 +265,7 @@ ${shot}
 
     // ── FEATURE-SPLIT — 좌우 분할 (이미지/본문) ──────────────────────────
     case 'feature-split': {
-      const shot = shotBlock({ slot: s.shotSlot })
+      const shot = shotBlock({ slot: s.shotSlot, url: s.url })
       const copy = `<div><h2 class="title">${escapeHtml(s.heading)}</h2><p class="body">${escapeHtml(s.body)}</p></div>`
       const inner = s.reverse
         ? `<div class="split rev">${shot}${copy}</div>`
@@ -282,6 +283,9 @@ ${shot}
           return `<div class="cell${span} txt"><div>${h}${p}</div></div>`
         }
         const slot = c.shotSlot ?? 'detailShot'
+        if (c.url && isSafeUrl(c.url)) {
+          return `<div class="cell${span} shot ${shotClass(slot)}"><img src="${escapeHtml(c.url)}" alt="${escapeHtml(c.title ?? shotSlotLabel(slot))}" /></div>`
+        }
         return `<div class="cell${span} shot ${shotClass(slot)} drape">${shotSlotTag(slot)}</div>`
       }).join('')
       const head = s.heading ? `<h2 class="title">${escapeHtml(s.heading)}</h2>` : ''
@@ -292,7 +296,7 @@ ${shot}
     case 'lookbook': {
       const figs = s.looks.map((l) => {
         const cap = l.caption ? `<figcaption>${escapeHtml(l.caption)}</figcaption>` : ''
-        return `<figure>${shotBlock({ slot: l.shotSlot })}${cap}</figure>`
+        return `<figure>${shotBlock({ slot: l.shotSlot, url: l.url, caption: l.caption })}${cap}</figure>`
       }).join('')
       const head = s.heading ? `<h2 class="title">${escapeHtml(s.heading)}</h2>` : ''
       return band(`${eyebrow(no, '스타일링')}${head}<div class="look">${figs}</div>`, { alt: false })

@@ -132,6 +132,7 @@ export const DetailPageSectionSchema = z.discriminatedUnion('type', [
     heading: z.string(),
     body: z.string(),
     shotSlot: ShotSlotSchema,
+    url: z.string().optional(),
     reverse: z.boolean().optional(),
   }),
   z.object({
@@ -140,6 +141,7 @@ export const DetailPageSectionSchema = z.discriminatedUnion('type', [
     cells: z.array(z.object({
       kind: z.enum(['image', 'text']),
       shotSlot: ShotSlotSchema.optional(),
+      url: z.string().optional(),
       title: z.string().optional(),
       text: z.string().optional(),
       span: z.enum(['big', 'wide', 'normal']).optional(),
@@ -150,6 +152,7 @@ export const DetailPageSectionSchema = z.discriminatedUnion('type', [
     heading: z.string().optional(),
     looks: z.array(z.object({
       shotSlot: ShotSlotSchema,
+      url: z.string().optional(),
       caption: z.string().optional(),
     })).min(1).max(8),
   }),

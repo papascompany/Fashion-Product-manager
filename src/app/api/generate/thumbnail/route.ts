@@ -49,6 +49,12 @@ const ThumbnailSchema = z.object({
   resolution: z.enum(['1K', '2K', '4K']).default('2K'),
   /** v1.1 Phase 2 — 핀 외 재생성 시 사용자 보정 지시 */
   refinement: z.string().max(200).optional(),
+  /** 상세페이지 컷 오케스트레이션 — 촬영 프리셋 (scene/composition 프리셋 소유) */
+  shotPreset: z
+    .enum(['flat-lay', 'hanger', 'ghost-mannequin', 'detail-macro', 'hero-object', 'lifestyle'])
+    .optional(),
+  /** 컷 간 상품 일관성 lock seed (같은 상품 컷 세트에 동일 값 전달) */
+  lockSeed: z.number().int().min(0).max(2_147_483_647).optional(),
   /** 한글 배지 텍스트 (예: '신상', '20% 할인') */
   overlayText: z.string().max(20).optional(),
   /** 한글 배지 스타일 옵션 (위치·색·모양) */
@@ -85,6 +91,7 @@ export async function POST(request: NextRequest) {
       projectId, imageUrl, imageBase64, analysis,
       aspectRatios, pinnedAspectRatios, count,
       overlayText, overlayBadge, refinement,
+      shotPreset, lockSeed,
     } = parsed.data
 
     // v1.1 Phase 2 — 핀된 비율 제외 (남은 비율이 없으면 모든 비율 진행 — 안전 fallback)
@@ -135,6 +142,9 @@ export async function POST(request: NextRequest) {
       aspectRatio: finalRatios[0] as AspectRatio,
       overlayText,
       overlayBadge,
+      shotPreset,
+      // lock seed 가 있는 요청 = 상세페이지 컷 세트 → 일관성 블록 포함
+      consistency: typeof lockSeed === 'number' ? {} : undefined,
     })
     let prompt = buildImagePrompt(layers)
     // v1.1 Phase 2 — refinement 가 있으면 프롬프트 끝에 보정 지시 추가
@@ -158,6 +168,7 @@ export async function POST(request: NextRequest) {
       aspectRatios: finalRatios as AspectRatio[],
       count,
       resolution: resolution as Resolution,
+      seed: lockSeed,
     })
 
     // ─── DB 기록 + 크레딧 차감 (단일 원자 트랜잭션) ─────────────────────

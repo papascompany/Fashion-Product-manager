@@ -1,0 +1,14 @@
+{
+  "name": "productcraft-render-service",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "ProductCraft 상세페이지 Playwright 렌더 마이크로서비스 (VPS 워커 오프로드)",
+  "scripts": {
+    "start": "node server.mjs"
+  },
+  "dependencies": {
+    "jszip": "^3.10.1",
+    "playwright": "^1.49.0"
+  }
+}

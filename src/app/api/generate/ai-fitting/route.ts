@@ -53,6 +53,10 @@ const FittingSchema = z.object({
   refinement: z.string().max(300).optional(),
   /** 마지막 모델 이미지 자동 저장 여부 — 사용자가 명시적으로 새 모델 사용 시 false */
   saveAsLastModel: z.boolean().default(true),
+  /** 상세페이지 컷 세트 — 착장 앵글 배리언트 (전/측/후/라이프스타일) */
+  shotVariant: z.enum(['front', 'side', 'back', 'lifestyle']).optional(),
+  /** 컷 간 일관성 lock seed — 전달 시 모델 프로필 락 가드레일도 함께 활성화 */
+  lockSeed: z.number().int().min(0).max(2_147_483_647).optional(),
 })
 
 // ─── 핸들러 ─────────────────────────────────────────────────────────────────
@@ -78,6 +82,7 @@ export async function POST(request: NextRequest) {
       aspectRatios,
       category, productKeyFeatures,
       refinement, saveAsLastModel,
+      shotVariant, lockSeed,
     } = parsed.data
 
     // 제품/모델 이미지 모두 있어야 함
@@ -177,6 +182,9 @@ export async function POST(request: NextRequest) {
       productKeyFeatures,
       aspectRatio: aspectRatios[0] as AspectRatio,
       refinement,
+      shotVariant,
+      // lock seed 가 있는 요청 = 상세페이지 컷 세트 → 모델 프로필 락 가드레일 활성화
+      modelLock: typeof lockSeed === 'number',
     })
 
     const genResult = await provider.generate({
@@ -185,6 +193,7 @@ export async function POST(request: NextRequest) {
       aspectRatios: aspectRatios as AspectRatio[],
       count: 1,
       resolution: resolution as Resolution,
+      seed: lockSeed,
     })
 
     if (genResult.images.length === 0) {

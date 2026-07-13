@@ -30,6 +30,7 @@ export type DetailSection =
       heading: string
       body: string
       shotSlot: ShotSlot
+      url?: string
       reverse?: boolean
     }
   | {
@@ -39,6 +40,7 @@ export type DetailSection =
       cells: {
         kind: 'image' | 'text'
         shotSlot?: ShotSlot
+        url?: string
         title?: string
         text?: string
         span?: 'big' | 'wide' | 'normal'
@@ -48,7 +50,7 @@ export type DetailSection =
       id: string
       type: 'lookbook'
       heading?: string
-      looks: { shotSlot: ShotSlot; caption?: string }[]
+      looks: { shotSlot: ShotSlot; url?: string; caption?: string }[]
     }
   | {
       id: string
@@ -174,6 +176,8 @@ export interface StudioStore {
   thumbnailResolution: Resolution
   trendKeywords: string[]
   detailPageSections: DetailSection[] | null
+  /** 상세페이지 컷 일관성 — 프로젝트당 1회 생성해 모든 컷 요청에 동봉하는 lock seed */
+  shotLockSeed: number | null
 
   // Phase 4 — AI Fitting
   /** 현재 업로드된 모델 이미지 (base64 — 막 업로드한 경우) */
@@ -227,6 +231,8 @@ export interface StudioStore {
   setThumbnailResolution: (r: Resolution) => void
   setTrendKeywords: (items: string[]) => void
   setDetailPageSections: (sections: DetailSection[] | null) => void
+  /** lock seed 가 없으면 생성 후 반환, 있으면 기존 값 반환 (컷 간 상품 일관성) */
+  ensureShotLockSeed: () => number
 
   // Phase 4 — AI Fitting
   setModelImage: (url: string | null, base64?: string | null) => void
@@ -261,6 +267,7 @@ const initialState = {
   thumbnailResolution: '2K' as Resolution,
   trendKeywords: [],
   detailPageSections: null as DetailSection[] | null,
+  shotLockSeed: null as number | null,
 
   // Phase 4 — AI Fitting
   modelImageBase64: null,
@@ -401,6 +408,15 @@ export const useStudioStore = create<StudioStore>((set, get) => ({
   setTrendKeywords: (items) => set({ trendKeywords: items }),
 
   setDetailPageSections: (sections) => set({ detailPageSections: sections }),
+
+  ensureShotLockSeed: () => {
+    const existing = get().shotLockSeed
+    if (existing !== null) return existing
+    // 32bit 양의 정수 seed — Gemini generationConfig.seed 허용 범위
+    const seed = Math.floor(Math.random() * 2_147_483_647)
+    set({ shotLockSeed: seed })
+    return seed
+  },
 
   // ─── Phase 4 — AI Fitting ───────────────────────────────────────────────
   setModelImage: (url, base64) =>
