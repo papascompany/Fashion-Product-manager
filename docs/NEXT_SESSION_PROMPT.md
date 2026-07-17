@@ -1,4 +1,14 @@
-# 다음 세션 시작 프롬프트 (2026-07-13 갱신)
+# 다음 세션 시작 프롬프트 (2026-07-17 갱신)
+
+> 🚨 **P0 — Supabase 백엔드 전면 불능 (2026-07-17 발견, 오너 조치 필요)**
+> Vercel preview/production env 의 `NEXT_PUBLIC_SUPABASE_URL` = `https://jspajtwnxnuvutekbhii.supabase.co` 가 **NXDOMAIN**
+> (로컬 dig·8.8.8.8·1.1.1.1·Cloudflare DoH 모두 동일) → 프로젝트 일시정지(무료 티어 pause) 또는 삭제.
+> **prod·preview 의 로그인/DB/생성 API 전부 런타임 불능** (빌드 READY 는 컴파일 검증일 뿐).
+> - 레포의 `.env.local`(`aigvfqplnlzcyvacnien`)은 **다른 앱 DB** — ProductCraft 아님, 혼동 금지.
+> - 연결된 Supabase MCP 조직에는 이 프로젝트가 없음 → 오너가 해당 Supabase 계정 대시보드에서
+>   ①일시정지면 Restore, ②삭제면 신규 프로젝트 생성 + 마이그레이션 001~012 재적용 + Storage 버킷
+>   (product-images/ai-fittings) 재생성 + Vercel env 교체 + 재배포.
+> - 복구 전까지 E2E 스모크(아래 후보 1) 불가.
 
 > 새 세션 첫 메시지로 이 파일 내용을 붙여넣거나 "docs/NEXT_SESSION_PROMPT.md 읽고 이어서 진행" 이라고 지시하세요.
 
