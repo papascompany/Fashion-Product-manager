@@ -4,7 +4,7 @@
 
 > ✅ **P0 해소 (2026-08-01)**: Supabase(`jspajtwnxnuvutekbhii`) 오너가 복구 완료 — DNS·Auth·DB·Storage 정상, 데이터 보존 확인(기존 사용자/썸네일 존재). 재발 방지: 무료 티어면 7일 비활성 시 다시 pause 될 수 있음 — 유료 전환 또는 주기적 keep-alive 검토(오너).
 >
-> 🔶 **오너 액션 1건 대기 — 마이그레이션 017 적용**: `supabase/migrations/017_generations_type_detail_page.sql` 을 콘솔 SQL Editor 에서 실행 (013~016 과 독립, 단독 적용 가능). 미적용 시 상세페이지 "저장"이 실패하며 — 이제는 조용히 유실되지 않고 `saved:false` 로 사용자에게 표시됨.
+> ✅ **마이그레이션 017 적용 완료 (2026-08-01)**: 오너 적용 후 `saved:true` + generations 에 `detail_page` 행 실저장 검증 완료. 상세페이지 저장 경로 정상.
 
 ---
 
@@ -70,9 +70,8 @@
 **E2E 재실행 레시피**: Vercel MCP `get_access_to_vercel_url`(⚠️ `_vercel_jwt` 는 배포 단위 — 새 배포마다 재발급) → `vercel env pull` 로 서비스 키(사용 후 삭제) → Admin `generate_link`(magiclink)→`verify` 로 세션(비밀번호 미사용) → `sb-<ref>-auth-token` base64-JSON 쿠키로 API 호출.
 
 ## 4. 예정 내역 (우선순위 순)
-1. 🔶 **마이그레이션 017 적용** (오너, 콘솔 1회) — 적용 후 detail-page 저장 `saved:true` 확인(스모크 픽스처로 1콜이면 됨).
-2. **감사 브랜치 머지** — 마이그레이션 013→016 적용 → 회귀검증 → webhook smoke → main merge.
-3. **`feat/detail-page-engine` → main 머지** — 감사 브랜치 먼저 머지 권장(결제/RLS 수정 포함). 잔여: AI Fitting 실생성 1회 확인(모델 사진 필요) + 패널 UI 클릭-스루.
+1. **감사 브랜치 머지** — 마이그레이션 013→016 적용 → 회귀검증 → webhook smoke → main merge. (017 은 이미 적용됨 — 013~016 과 독립이므로 순서 영향 없음)
+2. **`feat/detail-page-engine` → main 머지** — 감사 브랜치 먼저 머지 권장(결제/RLS 수정 포함). 잔여: AI Fitting 실생성 1회 확인(모델 사진 필요) + 패널 UI 클릭-스루.
 4. **오너 결정 3건** — ① 크레딧 번들 단가(현행 컷당 2~3크레딧 → 9컷 ≈ 24크레딧, 확정 시 `shot-plan.ts estimateShotCredits`+서버 가드 갱신) ② 세리프 라이선스(OFL Fraunces/Noto Serif KR vs 상용; 현재 system fallback) ③ 쿠팡 대표컷(1000×1000) 파이프·설명컷 기본값·테마 출시 우선순위·AI 고지 법무.
 5. **render-service VPS 실배포** (오너 또는 SSH 지시) — `render-service/README.md`: docker build/run(RENDER_TOKEN) → Vercel env 2개 등록. 미배포여도 클라이언트 폴백으로 무해.
 6. **Phase 2 심화** — 상품 마스터 레퍼런스 **세트**(정면+디테일+컬러칩 자동 파생, 현재는 원본 1장만 동봉), A컷 자동선별·카피↔이미지 페어링.
