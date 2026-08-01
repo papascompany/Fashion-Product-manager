@@ -1,16 +1,10 @@
-# 다음 세션 시작 프롬프트 (2026-07-17 갱신 · 상세페이지 Phase 2 완료 + P0 장애 발견 시점)
+# 다음 세션 시작 프롬프트 (2026-08-01 갱신 · E2E 스모크 통과 시점)
 
 > 새 세션 첫 메시지로 "docs/NEXT_SESSION_PROMPT.md 읽고 이어서 진행" 이라고 지시하세요.
 
-> 🚨 **P0 — Supabase 백엔드 전면 불능 (2026-07-17 발견, 오너 조치 대기)**
-> Vercel preview/production env 의 `NEXT_PUBLIC_SUPABASE_URL` = `https://jspajtwnxnuvutekbhii.supabase.co` 가 **NXDOMAIN**
-> (로컬 dig·8.8.8.8·1.1.1.1·Cloudflare DoH Status 3 전부 동일) → 프로젝트 일시정지(무료 티어 pause) 또는 삭제.
-> **prod·preview 의 로그인/DB/생성 API 전부 런타임 불능** — 지금까지의 "preview READY" 는 컴파일 검증일 뿐.
-> 복구 경로 (오너):
-> ① 일시정지면 해당 Supabase 계정 대시보드에서 **Restore** (데이터 보존, 가장 빠름).
-> ② 삭제면 신규 프로젝트 생성 → 마이그레이션 001~012 재적용 → Storage 버킷(`product-images`, `ai-fittings`) 재생성
->    → Vercel env 교체(`NEXT_PUBLIC_SUPABASE_URL`/`ANON_KEY`/`SERVICE_ROLE_KEY`) → 재배포. (지시가 있으면 에이전트가 대부분 수행 가능)
-> 매 세션 시작 시 `dig +short jspajtwnxnuvutekbhii.supabase.co @1.1.1.1` 로 복구 여부부터 확인할 것.
+> ✅ **P0 해소 (2026-08-01)**: Supabase(`jspajtwnxnuvutekbhii`) 오너가 복구 완료 — DNS·Auth·DB·Storage 정상, 데이터 보존 확인(기존 사용자/썸네일 존재). 재발 방지: 무료 티어면 7일 비활성 시 다시 pause 될 수 있음 — 유료 전환 또는 주기적 keep-alive 검토(오너).
+>
+> 🔶 **오너 액션 1건 대기 — 마이그레이션 017 적용**: `supabase/migrations/017_generations_type_detail_page.sql` 을 콘솔 SQL Editor 에서 실행 (013~016 과 독립, 단독 적용 가능). 미적용 시 상세페이지 "저장"이 실패하며 — 이제는 조용히 유실되지 않고 `saved:false` 로 사용자에게 표시됨.
 
 ---
 
@@ -39,7 +33,7 @@
 ## 2. 브랜치 3개 (모두 main 미머지)
 - **`main` = `621a9cf`** — 현 prod 베이스라인 (런타임은 P0 로 불능).
 - **`audit-immediate-thisweek` = `2f1157f`** — 감사 86 finding 조치 + pre-merge fix(013 RLS 가드·webhook 멱등성/부분취소). preview READY. 🚧 머지 전제: **마이그레이션 013→016 을 prod DB 에 순서 적용**(Supabase 복구 후에만 가능) → 013 회귀검증(quick 생성 → credits_left 감소) + webhook smoke → merge. 절차: 그 브랜치의 `docs/MIGRATION_GUIDE_013_014_015.md`, `docs/PREMERGE_REVIEW_FIXES.md`.
-- **`feat/detail-page-engine` = `ffecc25`** ← **현재 작업 브랜치**. 상세페이지 엔진 PRD+목업+Phase1+Phase2. preview READY. 감사와 독립.
+- **`feat/detail-page-engine` = `0394da8`** ← **현재 작업 브랜치**. 상세페이지 엔진 PRD+목업+Phase1+Phase2+E2E발견 저장버그 수정. preview READY + **E2E 스모크 통과**. 감사와 독립.
 
 ## 3. 완료된 내역 — 상세페이지 생성 엔진 (feat/detail-page-engine)
 목표: **1페이지 버티컬 상세페이지를 디자이너급 퀄리티로 자동 생성**. 설계 정본: `docs/DETAIL_PAGE_ENGINE_PRD.md`. 목업: `docs/mockups/detail-page-*.html`.
@@ -62,23 +56,29 @@
 - 섹션 `url` 확장: feature-split/material 셀/lookbook look — store·LLM zod·라우트 zod 미러·조립 렌더러·편집기 5곳 verbatim 동기.
 - **래스터화 서버 승격**: `render-service/`(VPS Playwright 마이크로서비스 — 섹션경계 슬라이스 ZIP, 2x 슈퍼샘플, Bearer 토큰, Dockerfile+배포 README) + `/api/render/detail-page` 프록시(`DETAIL_RENDER_URL`/`DETAIL_RENDER_TOKEN` env.ts 중앙화, 미구성 시 501 → 편집기가 클라이언트 래스터화 자동 폴백).
 
-**검증 상태**: 두 Phase 모두 Vercel preview 빌드 READY(컴파일·타입·번들). **런타임 E2E 는 0회 — P0 로 차단됨.**
+**검증 상태 — E2E 런타임 스모크 통과 (2026-08-01, preview `0394da8`)**:
+- ① thumbnail + `shotPreset:flat-lay` + `lockSeed`: **PASS** — 200/23s, 실이미지 690KB 저장, 프롬프트에 프리셋·CONSISTENCY·텍스트세이프존·NEGATIVE 포함, 크레딧 40→37 정합.
+- ①b `detail-macro` 동일 seed(배치 재현): **PASS** — 크레딧 37→34, weave/macro 프롬프트 확인.
+- ② ai-fitting `shotVariant`/`lockSeed`: zod 통과 + 모델이미지 가드 정상 400. **실생성은 미검증** — DB/스토리지에 모델 이미지가 없음(데이터 부재). 오너가 모델 사진 업로드 후 1회 실생성 확인 권장.
+- ③ detail-page 조립: **PASS** — 컷 url 4곳 `<img>` 렌더, 빈 fitShot 은 drape 플레이스홀더, closing 렌더, 커머스 요소 없음.
+- ④ render 프록시: **PASS** — 미구성 시 501 + `fallback:"client"`.
+- DB 정합: usage_events 2건(각 3크레딧)·thumbnails 2행·credits_left 일치.
+- **E2E 발견 버그(수정 완료, `0394da8`)**: `generations_type_check` 가 `detail_page` 미허용 → 저장 조용히 유실(Phase 1 부터 잠복). 수정 = 마이그레이션 017 + 라우트 `saved` 플래그 + 편집기 실패 표시. **017 콘솔 적용은 오너 대기.**
+- 스모크 픽스처(잔존, 재사용 가능): smoke user `smoke-e2e@papascompany.co.kr`(pro, 크레딧 34) + project `212bb47f-…` + 생성 컷 2장.
+- UI 클릭-스루(패널 버튼 실클릭)는 미수행 — 패널이 보내는 fetch 바디를 verbatim 재현해 API 계약 레벨로 검증함.
 
-**E2E 스모크 준비물(검증 완료, 복구 즉시 실행 가능)**:
-- Preview 접근: Vercel MCP `get_access_to_vercel_url` → `_vercel_share` → `_vercel_jwt` 쿠키.
-- 세션: 비밀번호 미사용 — Supabase Admin API `generate_link`(magiclink) → `verify`(token_hash) → access/refresh 토큰 → `sb-<ref>-auth-token` 쿠키(base64-JSON) 구성. (에이전트는 비밀번호 입력·계정 생성 불가 원칙)
-- 시나리오 4단계: ① thumbnail(`shotPreset`+`lockSeed`) ② ai-fitting(`shotVariant`+`lockSeed`) ③ detail-page(url 채운 섹션 → `<img>` 렌더 확인) ④ render 프록시(501 → 클라이언트 폴백 확인).
+**E2E 재실행 레시피**: Vercel MCP `get_access_to_vercel_url`(⚠️ `_vercel_jwt` 는 배포 단위 — 새 배포마다 재발급) → `vercel env pull` 로 서비스 키(사용 후 삭제) → Admin `generate_link`(magiclink)→`verify` 로 세션(비밀번호 미사용) → `sb-<ref>-auth-token` base64-JSON 쿠키로 API 호출.
 
 ## 4. 예정 내역 (우선순위 순)
-1. 🚨 **Supabase 복구** (오너) — 위 P0 배너. 이것 없이는 2·3 진행 불가.
-2. **E2E 런타임 스모크** — 위 준비물로 즉시 실행. 통과 기준: 컷 생성→슬롯 채움→미리보기 이미지 렌더→크레딧 차감 확인.
-3. **감사 브랜치 머지** — 마이그레이션 013→016 적용 → 회귀검증 → webhook smoke → main merge.
-4. **`feat/detail-page-engine` → main 머지** — E2E 통과 후. 감사 브랜치와 머지 순서 조정(감사 먼저 권장 — 결제/RLS 수정 포함).
-5. **오너 결정 3건** — ① 크레딧 번들 단가(현행 컷당 2~3크레딧 → 9컷 ≈ 24크레딧, 확정 시 `shot-plan.ts estimateShotCredits`+서버 가드 갱신) ② 세리프 라이선스(OFL Fraunces/Noto Serif KR vs 상용; 현재 system fallback) ③ 쿠팡 대표컷(1000×1000) 파이프·설명컷 기본값·테마 출시 우선순위·AI 고지 법무.
-6. **render-service VPS 실배포** (오너 또는 SSH 지시) — `render-service/README.md`: docker build/run(RENDER_TOKEN) → Vercel env 2개 등록. 미배포여도 클라이언트 폴백으로 무해.
-7. **Phase 2 심화** — 상품 마스터 레퍼런스 **세트**(정면+디테일+컬러칩 자동 파생, 현재는 원본 1장만 동봉), A컷 자동선별·카피↔이미지 페어링.
-8. **편집기 개선** — material 셀 인라인 편집(현 read-only), 미리보기 iframe sandbox 강화.
-9. **Phase 3 백로그** — 공유 웹뷰 스크롤 리빌·키네틱 헤드라인, 컷 QC 대시보드(상품 보존율/컬러 매칭), 3D 프리뷰.
+1. 🔶 **마이그레이션 017 적용** (오너, 콘솔 1회) — 적용 후 detail-page 저장 `saved:true` 확인(스모크 픽스처로 1콜이면 됨).
+2. **감사 브랜치 머지** — 마이그레이션 013→016 적용 → 회귀검증 → webhook smoke → main merge.
+3. **`feat/detail-page-engine` → main 머지** — 감사 브랜치 먼저 머지 권장(결제/RLS 수정 포함). 잔여: AI Fitting 실생성 1회 확인(모델 사진 필요) + 패널 UI 클릭-스루.
+4. **오너 결정 3건** — ① 크레딧 번들 단가(현행 컷당 2~3크레딧 → 9컷 ≈ 24크레딧, 확정 시 `shot-plan.ts estimateShotCredits`+서버 가드 갱신) ② 세리프 라이선스(OFL Fraunces/Noto Serif KR vs 상용; 현재 system fallback) ③ 쿠팡 대표컷(1000×1000) 파이프·설명컷 기본값·테마 출시 우선순위·AI 고지 법무.
+5. **render-service VPS 실배포** (오너 또는 SSH 지시) — `render-service/README.md`: docker build/run(RENDER_TOKEN) → Vercel env 2개 등록. 미배포여도 클라이언트 폴백으로 무해.
+6. **Phase 2 심화** — 상품 마스터 레퍼런스 **세트**(정면+디테일+컬러칩 자동 파생, 현재는 원본 1장만 동봉), A컷 자동선별·카피↔이미지 페어링.
+7. **편집기 개선** — material 셀 인라인 편집(현 read-only), 미리보기 iframe sandbox 강화.
+8. **Phase 3 백로그** — 공유 웹뷰 스크롤 리빌·키네틱 헤드라인, 컷 QC 대시보드(상품 보존율/컬러 매칭), 3D 프리뷰.
+9. **Supabase pause 재발 방지** (오너) — 무료 티어 유지 시 keep-alive 크론 또는 유료 전환 검토.
 
 ## 5. 오케스트레이션·작업 교훈
 - 병렬 서브에이전트 ~12 동시 → rate/session limit. **3~4 동시 배치**, 배치 간 sequential. Workflow resume 는 캐시 재생.
@@ -87,4 +87,4 @@
 - 마이그레이션 번호: 013~016 은 감사 브랜치 소유 — 새 마이그레이션은 **017부터** (충돌 방지).
 - "빌드 READY" ≠ 런타임 정상 — 백엔드 의존 기능은 반드시 런타임 스모크까지. (이번 P0 를 놓친 원인)
 
-마지막 커밋: `ffecc25` (feat/detail-page-engine, preview READY). Phase 2 본 커밋: `7153625`.
+마지막 커밋: `0394da8 fix(detail-page): generations 저장 유실 수정` (feat/detail-page-engine, preview READY, E2E 스모크 통과). Phase 2 본 커밋: `7153625`.
