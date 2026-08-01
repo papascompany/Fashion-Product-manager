@@ -233,7 +233,11 @@ export function DetailPageEditor({ sections, onChange, projectId, defaults }: De
         }),
       })
       if (!res.ok) throw new Error(`내보내기 실패 (${res.status})`)
-      const { html } = await res.json()
+      const { html, saved } = await res.json()
+      // 서버가 HTML 은 만들었지만 generations 저장에 실패한 경우 (마이그레이션 017 미적용 등)
+      if (mode === 'save' && saved === false) {
+        throw new Error('상세페이지 저장에 실패했습니다. 관리자에게 문의해주세요. (DB 기록 실패)')
+      }
       if (mode === 'preview') {
         setPreviewHtml(html)
       } else if (mode === 'download') {

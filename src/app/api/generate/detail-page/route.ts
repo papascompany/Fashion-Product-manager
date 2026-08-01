@@ -108,14 +108,18 @@ export async function POST(request: NextRequest) {
       keywords: data.keywords,
     })
 
-    // generations 테이블에 저장
-    await supabase.from('generations').insert({
+    // generations 테이블에 저장 — 실패해도 HTML 반환은 유지하되 saved 플래그로 알림
+    // (마이그레이션 017 미적용 시 generations_type_check 위반으로 실패할 수 있음)
+    const { error: saveError } = await supabase.from('generations').insert({
       project_id: data.projectId,
       type: 'detail_page',
       payload: { html, productName: data.productName, themeId } as unknown as Record<string, unknown>,
     })
+    if (saveError) {
+      console.error('[detail-page] generations insert failed:', saveError.message)
+    }
 
-    return NextResponse.json({ html, projectId: data.projectId, themeId })
+    return NextResponse.json({ html, projectId: data.projectId, themeId, saved: !saveError })
   } catch (err) {
     console.error('[/api/generate/detail-page]', err)
     return NextResponse.json({ error: '상세페이지 생성 실패' }, { status: 500 })
