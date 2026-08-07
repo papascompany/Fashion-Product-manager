@@ -30,10 +30,12 @@
 - fashion-curation 톤 단일진실 2곳: `.claude/skills/fashion-curation-copy/SKILL.md` + `src/lib/prompts/fashion-curation-style.ts`.
 - 커밋 트레일러: 현재 활성 모델 기준(최근: `Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>`). 커밋/푸시는 요청 시에만(단, preview 빌드 검증 목적 push 는 이 문서가 정의한 절차로 허용).
 
-## 2. 브랜치 3개 (모두 main 미머지)
-- **`main` = `621a9cf`** — 현 prod 베이스라인 (런타임은 P0 로 불능).
-- **`audit-immediate-thisweek` = `2f1157f`** — 감사 86 finding 조치 + pre-merge fix(013 RLS 가드·webhook 멱등성/부분취소). preview READY. 🚧 머지 전제: **마이그레이션 013→016 을 prod DB 에 순서 적용**(Supabase 복구 후에만 가능) → 013 회귀검증(quick 생성 → credits_left 감소) + webhook smoke → merge. 절차: 그 브랜치의 `docs/MIGRATION_GUIDE_013_014_015.md`, `docs/PREMERGE_REVIEW_FIXES.md`.
-- **`feat/detail-page-engine` = `0394da8`** ← **현재 작업 브랜치**. 상세페이지 엔진 PRD+목업+Phase1+Phase2+E2E발견 저장버그 수정. preview READY + **E2E 스모크 통과**. 감사와 독립.
+## 2. 브랜치 — 두 갈래 모두 main 에 머지 완료 (2026-08-08)
+- **`main` = `51693a9`** — **감사 브랜치 + 상세페이지 엔진 전부 반영, prod 배포 완료.** 이제 main 이 유일한 정본이며 두 feature 브랜치는 역할을 다했다(삭제 가능).
+- `audit-immediate-thisweek` (머지됨 `884dba4`) — 감사 86건 + 결제/RLS + 013 가드 수정(018·019).
+- `feat/detail-page-engine` (머지됨 `51693a9`) — 상세페이지 엔진 Phase 1+2.
+
+**적용된 마이그레이션 (prod DB)**: 001~012(기존) + **013·014·015·016** + **017**(generations detail_page) + **018·019**(가드 수정). 다음 신규 마이그레이션은 **020부터**.
 
 ## 3. 완료된 내역 — 상세페이지 생성 엔진 (feat/detail-page-engine)
 목표: **1페이지 버티컬 상세페이지를 디자이너급 퀄리티로 자동 생성**. 설계 정본: `docs/DETAIL_PAGE_ENGINE_PRD.md`. 목업: `docs/mockups/detail-page-*.html`.
@@ -67,23 +69,34 @@
 - 스모크 픽스처(잔존, 재사용 가능): smoke user `smoke-e2e@papascompany.co.kr`(pro, 크레딧 34) + project `212bb47f-…` + 생성 컷 2장.
 - UI 클릭-스루(패널 버튼 실클릭)는 미수행 — 패널이 보내는 fetch 바디를 verbatim 재현해 API 계약 레벨로 검증함.
 
+**머지 후 회귀검증 (2026-08-08, preview `432628a` READY → main `51693a9` 배포)**:
+- detail-page: 감사의 크레딧 가드(2크레딧 차감) + detail-page 의 `saved:true` **동시 동작 PASS**.
+- 컷 생성: ghost-mannequin 프리셋·CONSISTENCY·텍스트세이프존 프롬프트 반영 PASS.
+- render 프록시: 501 + `fallback:"client"` PASS.
+- **머지가 드러낸 문제(수정 `432628a`)**: 감사 브랜치의 동적 단가(BIZ-10, 1장=1크레딧)로 바뀌었는데 `estimateShotCredits` 가 옛 고정값(3)을 써 패널이 과대 표시 → 1/2 로 정정. **9컷 추정 ≈24 → 9~13 크레딧**(번들 단가 결정의 전제가 바뀜).
+- 머지 충돌 2건 해소: detail-page 라우트(크레딧 가드 + saved 결합) · 편집기(감사의 `PreviewModal` a11y 채택 + 래스터화 컨트롤/iframe ref 통합). iframe sandbox 는 `allow-scripts` 미부여를 유지한 채 `allow-same-origin` 만 허용(클라이언트 래스터화 폴백에 필요, 스크립트 실행 불가라 권한 상승 벡터 아님).
+
 **E2E 재실행 레시피**: Vercel MCP `get_access_to_vercel_url`(⚠️ `_vercel_jwt` 는 배포 단위 — 새 배포마다 재발급) → `vercel env pull` 로 서비스 키(사용 후 삭제) → Admin `generate_link`(magiclink)→`verify` 로 세션(비밀번호 미사용) → `sb-<ref>-auth-token` base64-JSON 쿠키로 API 호출.
 
 ## 4. 예정 내역 (우선순위 순)
-1. **감사 브랜치 머지** — 마이그레이션 013→016 적용 → 회귀검증 → webhook smoke → main merge. (017 은 이미 적용됨 — 013~016 과 독립이므로 순서 영향 없음)
-2. **`feat/detail-page-engine` → main 머지** — 감사 브랜치 먼저 머지 권장(결제/RLS 수정 포함). 잔여: AI Fitting 실생성 1회 확인(모델 사진 필요) + 패널 UI 클릭-스루.
-4. **오너 결정 3건** — ① 크레딧 번들 단가(현행 컷당 2~3크레딧 → 9컷 ≈ 24크레딧, 확정 시 `shot-plan.ts estimateShotCredits`+서버 가드 갱신) ② 세리프 라이선스(OFL Fraunces/Noto Serif KR vs 상용; 현재 system fallback) ③ 쿠팡 대표컷(1000×1000) 파이프·설명컷 기본값·테마 출시 우선순위·AI 고지 법무.
-5. **render-service VPS 실배포** (오너 또는 SSH 지시) — `render-service/README.md`: docker build/run(RENDER_TOKEN) → Vercel env 2개 등록. 미배포여도 클라이언트 폴백으로 무해.
-6. **Phase 2 심화** — 상품 마스터 레퍼런스 **세트**(정면+디테일+컬러칩 자동 파생, 현재는 원본 1장만 동봉), A컷 자동선별·카피↔이미지 페어링.
-7. **편집기 개선** — material 셀 인라인 편집(현 read-only), 미리보기 iframe sandbox 강화.
-8. **Phase 3 백로그** — 공유 웹뷰 스크롤 리빌·키네틱 헤드라인, 컷 QC 대시보드(상품 보존율/컬러 매칭), 3D 프리뷰.
-9. **Supabase pause 재발 방지** (오너) — 무료 티어 유지 시 keep-alive 크론 또는 유료 전환 검토.
+1. **잔여 런타임 검증 2건** — ① AI Fitting 실생성 1회(모델 사진 업로드 필요 — 오너 협조) ② 패널 UI 클릭-스루(실제 브라우저에서 "AI 컷 일괄 생성" 클릭).
+2. ⚠️ **결제 오픈 전 필수** — `TOSS_SECRET_KEY`/`TOSS_CLIENT_KEY` 가 **모든 Vercel 환경에 미설정**이라 Toss webhook 핸들러는 현재 fail-closed(요청 거부)이며 스모크 불가. 015 RPC 레벨(멱등성·금액·취소)은 검증 완료. 결제 오픈 시 secret 설정 → 핸들러 스모크 필수.
+3. **오너 결정 3건** — ① 크레딧 번들 단가(**동적 단가 반영 후 9컷 ≈ 9~13크레딧** — 재산정 필요) ② 세리프 라이선스(OFL Fraunces/Noto Serif KR vs 상용; 현재 system fallback) ③ 쿠팡 대표컷(1000×1000) 파이프·설명컷 기본값·테마 출시 우선순위·AI 고지 법무.
+4. **render-service VPS 실배포** (오너 또는 SSH 지시) — `render-service/README.md`: docker build/run(RENDER_TOKEN) → Vercel env 2개 등록. 미배포여도 클라이언트 폴백으로 무해.
+5. **Phase 2 심화** — 상품 마스터 레퍼런스 **세트**(정면+디테일+컬러칩 자동 파생, 현재는 원본 1장만 동봉), A컷 자동선별·카피↔이미지 페어링.
+6. **편집기 개선** — material 셀 인라인 편집(현 read-only).
+7. **Phase 3 백로그** — 공유 웹뷰 스크롤 리빌·키네틱 헤드라인, 컷 QC 대시보드(상품 보존율/컬러 매칭), 3D 프리뷰.
+8. **Supabase pause 재발 방지** (오너) — 무료 티어 유지 시 keep-alive 크론 또는 유료 전환 검토.
+9. **정리** — 머지 완료된 `audit-immediate-thisweek`·`feat/detail-page-engine` 브랜치 삭제, 스모크 픽스처 계정 유지 여부 결정.
 
 ## 5. 오케스트레이션·작업 교훈
 - 병렬 서브에이전트 ~12 동시 → rate/session limit. **3~4 동시 배치**, 배치 간 sequential. Workflow resume 는 캐시 재생.
 - 파일 소유권 분리 + **정확한 공유 계약**(export 시그니처·필드명 verbatim) 명시 → 병렬 코드 함께 컴파일.
 - 돈/RLS/인증 코드는 **머지 전 적대검증 리뷰 필수**. 컷 생성 신기능은 기존 크레딧 경로 재사용으로 리스크 회피(이번 Phase 2 방식).
-- 마이그레이션 번호: 013~016 은 감사 브랜치 소유 — 새 마이그레이션은 **017부터** (충돌 방지).
-- "빌드 READY" ≠ 런타임 정상 — 백엔드 의존 기능은 반드시 런타임 스모크까지. (이번 P0 를 놓친 원인)
+- 마이그레이션 번호: **019까지 사용됨 — 새 마이그레이션은 020부터.**
+- "빌드 READY" ≠ 런타임 정상 — 백엔드 의존 기능은 반드시 런타임 스모크까지. (P0 를 놓친 원인)
+- **"마이그레이션이 적용됐는가"가 아니라 "가드가 실제로 막는가"를 공격해봐야 한다.** 013 은 적용된 뒤에도 가드가 no-op 이었다(`security definer` → `current_user` 가 항상 소유자). 보안 수정은 반드시 **공격 시나리오 재현**으로 검증할 것.
+- 보안 가드는 **양방향 쌍으로** 검증한다 — "막아야 할 것이 막히는가" + "통과해야 할 것이 통과하는가"(WHK-01: 가드가 정당한 크레딧 차감까지 되돌리면 전 서비스 무료화).
+- 긴 SQL 을 콘솔에 붙여넣을 때는 **끝에 상태 확인 SELECT** 를 둔다. 붙여넣기 잘림을 "결과 표 유무"로 즉시 판별할 수 있다(이번에 150줄에서 잘린 사고를 이 방식으로 잡음).
 
 마지막 커밋: `0394da8 fix(detail-page): generations 저장 유실 수정` (feat/detail-page-engine, preview READY, E2E 스모크 통과). Phase 2 본 커밋: `7153625`.
