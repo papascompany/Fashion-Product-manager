@@ -148,12 +148,20 @@ export default async function AdminDashboard() {
                 </div>
               </div>
             ) : (
-              <div className="text-[13px] font-black text-[#007d48]">정상</div>
+              // TYP-05 — reportProviderFailure 가 호출되지 않으면 "정상" 인지
+              // "보고가 없는지" 구분이 안 된다. 메시지를 명확히 한다.
+              <div>
+                <div className="text-[13px] font-black text-[#007d48]">정상 또는 데이터 없음</div>
+                <div className="text-[11px] text-[#9e9ea0] mt-0.5">
+                  이 인스턴스에서 감지된 장애가 없거나, 라우트가 아직 wire 되지 않았습니다.
+                </div>
+              </div>
             )}
           </div>
         </div>
         <p className="text-[11px] text-[#9e9ea0] mt-2">
           키 설정 여부와 이 인스턴스에서 최근 감지된 장애를 표시합니다. 실시간 잔액·할당량은 아닙니다.
+          장애 데이터는 라우트의 catch 블록에 <code className="font-mono">reportProviderFailure()</code> 가 호출돼야 채워집니다.
         </p>
       </section>
 

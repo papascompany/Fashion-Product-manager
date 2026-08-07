@@ -13,11 +13,12 @@
  * D-3: Pro 이상만 — 비-Pro 클릭 시 CreditGuardModal 트리거 (부모에서 처리)
  */
 
-import { useState, useRef, useCallback } from 'react'
+import { useEffect, useState, useRef, useCallback } from 'react'
 import {
   Loader2, Upload, Sparkles, Download, X, RefreshCw,
   Image as ImageIcon, AlertCircle,
 } from 'lucide-react'
+import { aiFittingCredits } from '@/lib/credit-guard'
 
 interface FittingResult {
   url: string
@@ -51,6 +52,10 @@ interface AIFittingPanelProps {
   /** 결과 hero 선택 */
   selectedFittingUrl: string | null
   onSelectHero: (url: string) => void
+  /** UX-05 — alt 합성용 제품명·카테고리·키워드 */
+  productName?: string
+  category?: string
+  keywords?: string[]
 }
 
 // ─── D안 — 비율별 채널 힌트 ─────────────────────────────────────────────────
@@ -60,13 +65,9 @@ const RATIO_OPTIONS: Array<{ value: string; label: string; channel: string }> = 
   { value: '9:16', label: '9:16', channel: '인스타 스토리·릴스' },
 ]
 
-// 비율 개수별 크레딧 (서버 aiFittingCredits 와 동일 로직)
-function ratiosToCredits(count: number): number {
-  if (count <= 1) return 2
-  if (count === 2) return 4
-  if (count === 3) return 5
-  return 6
-}
+// TYP-06 — 비율 개수별 크레딧은 서버 SoT (credit-guard.aiFittingCredits) 만 사용.
+// 클라이언트는 표시용으로만 호출 — 실제 차감은 서버에서 결정.
+const ratiosToCredits = aiFittingCredits
 
 const ACCEPTED_TYPES = ['image/jpeg', 'image/png', 'image/webp']
 const MAX_SIZE_MB = 10
@@ -74,7 +75,40 @@ const MAX_SIZE_MB = 10
 export function AIFittingPanel(p: AIFittingPanelProps) {
   const [generating, setGenerating] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [progress, setProgress] = useState(0)
+  // UX-10 — 사용자 취소 신호. 부모는 별도 AbortController 를 들고 있으므로
+  // 여기선 UI 상 즉시 generating=false 로 전환해 사용자에게 즉각 피드백을 준다.
+  const cancelledRef = useRef(false)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
+
+  // UX-05 — alt 합성 헬퍼: productName + category + 핵심 키워드 1~2개
+  const buildAlt = useCallback((kind: '원본 제품' | '모델' | 'AI Fitting 결과'): string => {
+    const name = (p.productName ?? '').trim()
+    const cat = (p.category ?? '').trim()
+    const kw = (p.keywords ?? []).slice(0, 2).filter(Boolean).join(' · ')
+    const parts = [name, cat, kw].filter(Boolean)
+    if (parts.length === 0) return kind
+    return `${kind} — ${parts.join(' · ')}`
+  }, [p.productName, p.category, p.keywords])
+
+  // UX-10 — 진행률 placeholder: 60~90s 동안 점진적 증가, 95% 에서 정체
+  useEffect(() => {
+    if (!generating) {
+      setProgress(0)
+      return
+    }
+    setProgress(8)
+    const interval = setInterval(() => {
+      setProgress((cur) => {
+        // 95% 에서 정체 → 응답 받을 때까지 대기
+        if (cur >= 95) return cur
+        // 후반부는 천천히
+        const delta = cur < 60 ? 2 : cur < 85 ? 1 : 0.5
+        return Math.min(cur + delta, 95)
+      })
+    }, 800)
+    return () => clearInterval(interval)
+  }, [generating])
 
   // D안 — 생성할 비율 선택 (기본: 3개 모두 체크)
   const [selectedRatios, setSelectedRatios] = useState<Set<string>>(
@@ -135,13 +169,25 @@ export function AIFittingPanel(p: AIFittingPanelProps) {
     }
     setError(null)
     setGenerating(true)
+    cancelledRef.current = false
     try {
       await p.onGenerate(Array.from(selectedRatios))
     } catch (err) {
+      // UX-10 — 사용자 취소면 조용히 처리
+      if (cancelledRef.current) return
       setError(err instanceof Error ? err.message : 'AI Fitting 실패')
     } finally {
       setGenerating(false)
+      setProgress(0)
     }
+  }
+
+  // UX-10 — 사용자 취소: UI 즉시 종료. 실제 fetch abort 는 부모 controller 가 담당.
+  const handleCancel = () => {
+    cancelledRef.current = true
+    setGenerating(false)
+    setProgress(0)
+    setError('취소했어요. 크레딧은 차감되지 않을 수 있습니다(서버 진행 단계에 따라 다름).')
   }
 
   // 표시용 결과 (selectedFittingUrl 우선)
@@ -227,7 +273,7 @@ export function AIFittingPanel(p: AIFittingPanelProps) {
           >
             {p.productImageUrl ? (
               // eslint-disable-next-line @next/next/no-img-element
-              <img src={p.productImageUrl} alt="원본 제품" className="w-full h-full object-cover" />
+              <img src={p.productImageUrl} alt={buildAlt('원본 제품')} className="w-full h-full object-cover" />
             ) : (
               <ImageIcon className="w-10 h-10 text-[#9e9ea0]" />
             )}
@@ -247,7 +293,7 @@ export function AIFittingPanel(p: AIFittingPanelProps) {
                 style={{ border: '1px solid #e5e5e5', backgroundColor: '#f5f5f5' }}
               >
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={effectiveModel!} alt="모델" className="w-full h-full object-cover" />
+                <img src={effectiveModel!} alt={buildAlt('모델')} className="w-full h-full object-cover" />
                 <button
                   onClick={() => {
                     p.onModelClear()
@@ -381,7 +427,7 @@ export function AIFittingPanel(p: AIFittingPanelProps) {
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src={heroFitting.url}
-                  alt="AI Fitting 결과"
+                  alt={`${buildAlt('AI Fitting 결과')} · ${heroFitting.aspectRatio}`}
                   className="w-full h-full object-contain"
                 />
               </div>
@@ -400,12 +446,36 @@ export function AIFittingPanel(p: AIFittingPanelProps) {
             </div>
           ) : generating ? (
             <div
-              className="flex-1 flex flex-col items-center justify-center gap-2"
+              className="flex-1 flex flex-col items-center justify-center gap-3 px-4"
               style={{ minHeight: 240, backgroundColor: '#f5f5f5', border: '1px dashed #cacacb' }}
             >
               <Loader2 className="w-8 h-8 text-[#111111] animate-spin" />
               <p className="text-[12px] font-semibold text-[#111111]">AI Fitting 진행 중</p>
-              <p className="text-[10px] text-[#707072]">약 30초 ~ 1분 소요</p>
+              {/* UX-10 — 진행률 placeholder (실제 서버 진행률이 아닌 시간 기반 시각화) */}
+              <div
+                className="w-full h-1.5"
+                style={{ backgroundColor: '#e5e5e5' }}
+                role="progressbar"
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={Math.round(progress)}
+                aria-label="AI Fitting 진행률"
+              >
+                <div
+                  className="h-full"
+                  style={{ backgroundColor: '#111111', width: `${progress}%`, transition: 'width 400ms ease-out' }}
+                />
+              </div>
+              <p className="text-[10px] text-[#707072]">약 30초 ~ 1분 소요 · {Math.round(progress)}%</p>
+              {/* UX-10 — 취소 버튼 */}
+              <button
+                onClick={handleCancel}
+                className="inline-flex items-center gap-1 px-3 h-8 rounded-full text-[11px] font-semibold text-[#707072] hover:text-[#111111] transition-colors"
+                style={{ border: '1px solid #cacacb', backgroundColor: '#ffffff' }}
+              >
+                <X className="w-3 h-3" />
+                취소
+              </button>
             </div>
           ) : (
             <div

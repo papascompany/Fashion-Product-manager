@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/server'
 import { generateProductNames } from '@/lib/ai/generators/naming-agent'
 import { fetchTrendKeywords } from '@/lib/trends/trend-fetcher'
 import { UserIntentSchema } from '@/lib/ai/types'
+import { checkCreditGuard, deductCredits } from '@/lib/credit-guard'
 
 export const runtime = 'edge'
 export const dynamic = 'force-dynamic'
@@ -35,6 +36,15 @@ export async function POST(request: NextRequest) {
 
     const { category, keywords, style, platform, projectId, userIntent, refinement, parentId } = parsed.data
 
+    // BIZ-07 — 부분재생성 라우트에도 크레딧 가드 (studio_text_refine = 1 크레딧)
+    const guard = await checkCreditGuard({ userId: user.id, operation: 'studio_text_refine' })
+    if (!guard.allowed) {
+      return NextResponse.json(
+        { error: guard.reason, code: guard.code, upgradeUrl: guard.upgradeUrl, guardResult: guard },
+        { status: 402 }
+      )
+    }
+
     // 트렌드 키워드 병렬 fetch
     const { keywords: trendKeywords } = await fetchTrendKeywords({ category })
 
@@ -57,6 +67,9 @@ export async function POST(request: NextRequest) {
         refinement_prompt: refinement ?? null,
       })
     }
+
+    // 성공 후 크레딧 차감 (실패 시 차감 안 함)
+    await deductCredits({ userId: user.id, operation: 'studio_text_refine' })
 
     return NextResponse.json(result)
   } catch (err) {

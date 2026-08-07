@@ -15,6 +15,10 @@ import { createClient } from '@/lib/supabase/server'
 import { buildThemeStyle, DEFAULT_THEME } from '@/lib/detail-page/themes'
 import type { ThemeId } from '@/lib/detail-page/themes'
 import type { DetailSection, ShotSlot } from '@/store/studio'
+import { checkCreditGuard, deductCredits } from '@/lib/credit-guard'
+
+export const runtime = 'nodejs'
+export const maxDuration = 30
 
 // ─── 스키마 ─────────────────────────────────────────────────────────────────
 
@@ -93,6 +97,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 })
     }
 
+    // BIZ-06 — Pro+ 플랜 게이트 + 2 크레딧 차감 (상세페이지 HTML 자동 조립)
+    const guard = await checkCreditGuard({ userId: user.id, operation: 'detail_page' })
+    if (!guard.allowed) {
+      return NextResponse.json(
+        { error: guard.reason, code: guard.code, upgradeUrl: guard.upgradeUrl, guardResult: guard },
+        { status: 402 }
+      )
+    }
+
     const data = parsed.data
     const themeId: ThemeId = data.themeId ?? DEFAULT_THEME
 
@@ -118,6 +131,9 @@ export async function POST(request: NextRequest) {
     if (saveError) {
       console.error('[detail-page] generations insert failed:', saveError.message)
     }
+
+    // 성공 후 크레딧 차감 (HTML 생성 비용은 발생했으므로 저장 실패와 무관하게 차감)
+    await deductCredits({ userId: user.id, operation: 'detail_page' })
 
     return NextResponse.json({ html, projectId: data.projectId, themeId, saved: !saveError })
   } catch (err) {

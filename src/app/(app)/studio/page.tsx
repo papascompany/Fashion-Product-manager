@@ -1,9 +1,9 @@
 'use client'
 
-import { useState, useCallback, useEffect, Suspense, memo } from 'react'
+import { useState, useCallback, useEffect, useRef, Suspense, memo } from 'react'
 import Image from 'next/image'
 import { useSearchParams, useRouter } from 'next/navigation'
-import { Sparkles, Loader2 } from 'lucide-react'
+import { Sparkles, Loader2, AlertCircle, X } from 'lucide-react'
 import { Progress } from '@/components/ui/progress'
 import { UploadDropzone } from '@/components/upload-dropzone'
 import { ResultCard } from '@/components/result-card'
@@ -19,6 +19,7 @@ import {
   selectStatusLabel,
   type StudioMode,
   type GenerationResult,
+  type DetailSection,
 } from '@/store/studio'
 import type { CreditGuardResult } from '@/lib/credit-guard'
 import { consumePipelineSSE } from '@/lib/ai/sse-client'
@@ -52,6 +53,16 @@ function StudioPageInner() {
     result: CreditGuardResult | null
     reason: 'insufficient_credits' | 'plan_required'
   }>({ open: false, result: null, reason: 'insufficient_credits' })
+
+  // UX-01 — 결과 화면 에러 토스트(비파괴 inline banner). 4~6초 후 자동 dismiss.
+  useEffect(() => {
+    if (!errorMsg) return
+    const t = setTimeout(() => setErrorMsg(null), 5000)
+    return () => clearTimeout(t)
+  }, [errorMsg])
+
+  // RACE-03 — AI Fitting 요청 도중 store.reset 또는 새 요청 시 직전 응답 무효화
+  const aiFittingControllerRef = useRef<AbortController | null>(null)
 
   // ─── Phase 4 — AI Fitting: last_model_image_url 상태 (선언을 useEffect 앞으로) ──
   const [lastModelImageUrl, setLastModelImageUrl] = useState<string | null>(null)
@@ -120,8 +131,30 @@ function StudioPageInner() {
         const gens = (project.generations as Gen[]) ?? []
         const naming   = gens.find((g) => g.type === 'naming')
         const taglineG = gens.find((g) => g.type === 'tagline')
-        const descG    = gens.find((g) => g.type === 'description')
+        // detail-page-sections 라우트가 type='description' 으로 별도 row 를 쓰므로
+        // 실제 description 본문 row 만 골라낸다 (payload.description 가 string 인 것).
+        const descG    = gens.find(
+          (g) => g.type === 'description' &&
+                 typeof (g.payload as { description?: unknown }).description === 'string'
+        )
         const analyzeG = gens.find((g) => g.type === 'analyze')
+        // UX-03 — thumbnails / detail_page / ai_fitting / pinned 도 복원
+        // 실제 저장 구조:
+        //  - thumbnails 테이블 → 별도 fetch 필요. 일단 payload.thumbnails 가 있다면 시도 (legacy/embed).
+        //  - detail_page_sections: api/generate/detail-page-sections 가 type='description',
+        //    payload.detailPageSections 에 저장. 마지막 description 항목 payload 를 검사.
+        //  - ai_fittings 테이블 → 별도. payload.fittings 가 들어있는 generation 있으면 사용.
+        const thumbG       = gens.find(
+          (g) => g.type === 'thumbnail' || Array.isArray((g.payload as { thumbnails?: unknown }).thumbnails)
+        )
+        const detailPageG  = gens.find(
+          (g) => g.type === 'detail_page_sections' ||
+                 Array.isArray((g.payload as { detailPageSections?: unknown }).detailPageSections) ||
+                 Array.isArray((g.payload as { sections?: unknown }).sections)
+        )
+        const aiFittingGs  = gens.filter(
+          (g) => g.type === 'ai_fitting' || Array.isArray((g.payload as { fittings?: unknown }).fittings)
+        )
 
         if (!naming || !taglineG || !descG) {
           throw new Error('이 프로젝트는 아직 생성이 완료되지 않았습니다.')
@@ -131,6 +164,26 @@ function StudioPageInner() {
         store.setProjectId(projectId)
         if (project.product_image_url) store.setImage(project.product_image_url)
 
+        // 썸네일 — payload.thumbnails 배열에서 ratio/url/width/height 매핑
+        type StoredThumb = {
+          aspect_ratio?: string
+          ratio?: string
+          url?: string
+          width?: number
+          height?: number
+        }
+        const storedThumbs = (thumbG?.payload?.thumbnails as StoredThumb[] | undefined) ?? []
+        const thumbnails = storedThumbs
+          .filter((t): t is StoredThumb & { url: string } => !!t.url)
+          .map((t) => ({
+            ratio: t.aspect_ratio ?? t.ratio ?? '1:1',
+            label: t.aspect_ratio ?? t.ratio ?? '1:1',
+            size: `${t.width ?? 0}×${t.height ?? 0}`,
+            url: t.url,
+            width: t.width,
+            height: t.height,
+          }))
+
         store.setResult({
           names:       (naming.payload.names   as GenerationResult['names']) ?? [],
           tagline:     (taglineG.payload.tagline  as string) ?? '',
@@ -139,7 +192,58 @@ function StudioPageInner() {
           category: analyzeG?.payload?.category   as string | undefined,
           keywords: analyzeG?.payload?.keywords   as string[] | undefined,
           features: analyzeG?.payload?.keyFeatures as string[] | undefined,
+          pointKeywords: descG?.payload?.pointKeywords as string[] | undefined,
+          thumbnails: thumbnails.length > 0 ? thumbnails : undefined,
+          primaryThumbnailUrl: thumbnails[0]?.url,
         })
+
+        // 핀 된 ratio 복원 (저장된 경우)
+        const pinned = thumbG?.payload?.pinnedAspectRatios as string[] | undefined
+        if (Array.isArray(pinned)) {
+          for (const r of pinned) store.togglePin(r)
+        }
+
+        // 상세페이지 섹션 복원 — detail-page-sections 라우트가 description type 으로
+        // 묶어서 detailPageSections / sections 필드 양쪽 다 가능. 둘 다 시도.
+        const sections =
+          (detailPageG?.payload?.detailPageSections as DetailSection[] | undefined) ??
+          (detailPageG?.payload?.sections as DetailSection[] | undefined)
+        if (Array.isArray(sections) && sections.length > 0) {
+          store.setDetailPageSections(sections)
+        }
+
+        // AI 피팅 결과 복원 — 현재는 ai_fittings 테이블에 별도 저장이라 generations
+        // 에 들어있지 않다. 그러나 향후 generations 에 백필되거나 legacy payload 가
+        // 있을 수 있어 best-effort 로 처리. 비어 있으면 noop.
+        type StoredFitting = {
+          url?: string
+          result_url?: string
+          aspect_ratio?: string
+          aspectRatio?: string
+          width?: number
+          height?: number
+          model_image_url?: string | null
+        }
+        const fittings: Array<{
+          url: string; aspectRatio: string; width: number; height: number; modelImageUrl?: string | null
+        }> = []
+        for (const g of aiFittingGs) {
+          const items = (g.payload?.fittings as StoredFitting[] | undefined) ?? []
+          for (const f of items) {
+            const url = f.result_url ?? f.url
+            if (!url) continue
+            fittings.push({
+              url,
+              aspectRatio: f.aspect_ratio ?? f.aspectRatio ?? '1:1',
+              width: f.width ?? 0,
+              height: f.height ?? 0,
+              modelImageUrl: f.model_image_url ?? null,
+            })
+          }
+        }
+        if (fittings.length > 0) {
+          store.setAiFittings(fittings)
+        }
 
         // URL 파라미터 정리
         router.replace('/studio')
@@ -148,6 +252,8 @@ function StudioPageInner() {
         const message = err instanceof Error ? err.message : '불러오기 실패'
         setHistoryLoadError(message)
         store.setStatus('idle', 0)
+        // UX-07 — 실패한 ?projectId= 를 URL 에서 제거해 새로고침/북마크 재시도 시 동일 에러 반복 방지
+        router.replace('/studio')
       }
     }
 
@@ -158,6 +264,7 @@ function StudioPageInner() {
   // ─── 파이프라인 실행 (SSE 스트리밍) ─────────────────────────────────────
   const runPipeline = async (imageUrl: string, base64: string, mode: StudioMode) => {
     store.setStatus('analyzing', STATUS_PROGRESS.analyzing)
+    // analytics: generation_started 는 server-side pipeline/route.ts 에서 기록 (client 직접 호출 시 supabase/server 가 client 번들로 끌려와 빌드 깨짐 — Turbopack)
 
     // SSE 누적 상태
     let projectId: string | null = null
@@ -315,6 +422,7 @@ function StudioPageInner() {
 
       store.setResult(result)
       setCreditsLeft((prev) => Math.max(prev - 1, 0))
+      // analytics: generation_completed 는 server-side pipeline/route.ts 에서 기록
     } catch (err) {
       const message = err instanceof Error ? err.message : '알 수 없는 오류'
       store.setError(message)
@@ -471,23 +579,44 @@ function StudioPageInner() {
     const productUrl = store.uploadedImageUrl ?? null
     if (!productUrl) throw new Error('원본 제품 이미지가 없습니다.')
 
-    const res = await fetch('/api/generate/ai-fitting', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        projectId: store.projectId,
-        // 제품 이미지: URL 전용 (base64 전송 금지 — 요청 크기 최소화)
-        productImageUrl: productUrl,
-        // 모델 이미지: 새 업로드 시 base64, 재사용 시 URL
-        modelImageBase64: useBase64 ?? undefined,
-        modelImageUrl: !useBase64 ? useUrl : undefined,
-        aspectRatios,  // D안: 사용자가 선택한 비율만
-        resolution: store.thumbnailResolution,
-        category: effectiveAnalysis.category ?? '패션 아이템',
-        productKeyFeatures: effectiveAnalysis.keyFeatures ?? [],
-        saveAsLastModel: !!useBase64,  // base64 로 새로 올린 경우만 last_model 갱신
-      }),
-    })
+    // RACE-03 — 직전 진행 중인 controller 가 있으면 abort, 응답 처리 전 projectId 캡처/비교
+    aiFittingControllerRef.current?.abort()
+    const controller = new AbortController()
+    aiFittingControllerRef.current = controller
+    const requestProjectId = store.projectId
+
+    let res: Response
+    try {
+      res = await fetch('/api/generate/ai-fitting', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          projectId: requestProjectId,
+          // 제품 이미지: URL 전용 (base64 전송 금지 — 요청 크기 최소화)
+          productImageUrl: productUrl,
+          // 모델 이미지: 새 업로드 시 base64, 재사용 시 URL
+          modelImageBase64: useBase64 ?? undefined,
+          modelImageUrl: !useBase64 ? useUrl : undefined,
+          aspectRatios,  // D안: 사용자가 선택한 비율만
+          resolution: store.thumbnailResolution,
+          category: effectiveAnalysis.category ?? '패션 아이템',
+          productKeyFeatures: effectiveAnalysis.keyFeatures ?? [],
+          saveAsLastModel: !!useBase64,  // base64 로 새로 올린 경우만 last_model 갱신
+        }),
+        signal: controller.signal,
+      })
+    } catch (fetchErr) {
+      if (controller.signal.aborted) {
+        // 의도적 취소 — 조용히 종료
+        return
+      }
+      throw fetchErr
+    }
+
+    // 응답 처리 직전 projectId 가드 — store.reset 으로 프로젝트가 바뀌었다면 무시
+    if (useStudioStore.getState().projectId !== requestProjectId) {
+      return
+    }
 
     if (res.status === 402) {
       const err = await res.json()
@@ -504,6 +633,12 @@ function StudioPageInner() {
       throw new Error(err.error ?? 'AI Fitting 실패')
     }
     const data = await res.json()
+
+    // 응답 파싱 직후 한 번 더 projectId 가드
+    if (useStudioStore.getState().projectId !== requestProjectId) {
+      return
+    }
+
     // fittings 적용
     const items = (data.fittings ?? []).map((f: { result_url?: string; url?: string; aspect_ratio?: string; aspectRatio?: string; width: number; height: number; model_image_url?: string | null }) => ({
       url: f.result_url ?? f.url ?? '',
@@ -518,6 +653,7 @@ function StudioPageInner() {
       setLastModelImageUrl(data.modelImageUrl)
       store.setModelImage(data.modelImageUrl, null)
     }
+    // analytics: fitting_created 는 server-side ai-fitting/route.ts 에서 기록
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [store.projectId, store.result, store.modelImageBase64, store.modelImageUrl, store.reuseLastModel, store.uploadedImageBase64, store.uploadedImageUrl, store.thumbnailResolution, lastModelImageUrl, effectiveAnalysis])
 
@@ -592,7 +728,11 @@ function StudioPageInner() {
         <div className="bg-white sticky top-0 z-10" style={{ borderBottom: '1px solid #e5e5e5' }}>
           <div className="max-w-5xl mx-auto px-6 py-4 flex items-center justify-between">
             <button
-              onClick={() => store.reset()}
+              onClick={() => {
+                // RACE-03 — 진행 중 AI Fitting 응답을 무효화 후 reset
+                aiFittingControllerRef.current?.abort()
+                store.reset()
+              }}
               className="text-[14px] font-medium text-[#707072] hover:text-[#111111] transition-colors"
             >
               ← 모드 선택으로
@@ -603,6 +743,32 @@ function StudioPageInner() {
           </div>
         </div>
 
+        {/* UX-01 — 결과 화면 에러 노출 (4~6초 자동 dismiss, 수동 닫기 가능) */}
+        {errorMsg && (
+          <div
+            className="max-w-[1280px] mx-auto px-4 md:px-6 pt-4"
+            role="status"
+            aria-live="polite"
+          >
+            <div
+              className="flex items-start gap-2.5 p-3"
+              style={{ backgroundColor: '#fff5f5', border: '1px solid #fecaca' }}
+            >
+              <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" style={{ color: '#d30005' }} />
+              <p className="flex-1 text-[13px]" style={{ color: '#d30005' }}>
+                {errorMsg}
+              </p>
+              <button
+                onClick={() => setErrorMsg(null)}
+                aria-label="에러 알림 닫기"
+                className="flex-shrink-0 p-0.5 text-[#9e9ea0] hover:text-[#111111] transition-colors"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* 결과 + 사이드바 (lg 이상 2단 레이아웃, 모바일은 사이드바가 floating drawer) */}
         <div className="max-w-[1280px] mx-auto px-4 md:px-6 lg:flex lg:items-start lg:gap-6 lg:pt-6">
           <div className="flex-1 min-w-0">
@@ -610,6 +776,8 @@ function StudioPageInner() {
               result={store.result}
               mode={store.mode}
               projectId={store.projectId}
+              errorMessage={errorMsg}
+              onDismissError={() => setErrorMsg(null)}
               onSelectName={store.selectName}
               onRegenerate={() => store.reset()}
               onSave={() => router.push('/history')}

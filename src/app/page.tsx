@@ -13,51 +13,96 @@
 
 import Link from 'next/link'
 import { ArrowRight, Check, Zap, Wand2 } from 'lucide-react'
+import {
+  PLAN_PRICES,
+  PLAN_CREDITS,
+  PLAN_DISPLAY_NAMES,
+  FREE_INITIAL_CREDITS,
+  formatKRW,
+} from '@/lib/plan-settings-shared'
 
 // ─── 요금제 ────────────────────────────────────────────────────────────────────
-const PLANS = [
+// BIZ-05 / BIZ-11 / UX-02 — 가격·크레딧 수치는 모두 plan-settings-shared SoT 에서 import.
+// Free 카피는 "월 N회" 가 아니라 "가입 시 N크레딧 제공" 으로 수정 (월 cron 미도입).
+
+interface LandingPlan {
+  id: 'free' | 'starter' | 'pro' | 'business'
+  name: string
+  price: string
+  sub: string
+  credits: number
+  highlight: boolean
+  badge?: string
+  features: string[]
+  cta: string
+  href: string
+}
+
+const PLANS: LandingPlan[] = [
   {
     id: 'free',
-    name: 'Free',
+    name: PLAN_DISPLAY_NAMES.free,
     price: '무료',
     sub: '영원히',
-    credits: 3,
+    credits: PLAN_CREDITS.free,
     highlight: false,
-    features: ['월 3회 생성', '간편 모드', '2K 해상도', '7일 내역 보관'],
+    features: [
+      `가입 시 ${FREE_INITIAL_CREDITS} 크레딧 제공`,
+      '간편 모드',
+      '1K 해상도',
+      '7일 내역 보관',
+    ],
     cta: '무료로 시작',
     href: '/auth/signup',
   },
   {
     id: 'starter',
-    name: 'Starter',
-    price: '₩19,900',
+    name: PLAN_DISPLAY_NAMES.starter,
+    price: formatKRW(PLAN_PRICES.starter),
     sub: '/월',
-    credits: 50,
+    credits: PLAN_CREDITS.starter,
     highlight: false,
-    features: ['월 50회 생성', '간편 + 스튜디오 모드', '2K 해상도', '30일 내역 보관'],
+    features: [
+      `월 ${PLAN_CREDITS.starter}크레딧`,
+      '간편 + 스튜디오 모드',
+      '2K 해상도',
+      '30일 내역 보관',
+    ],
     cta: '시작하기',
     href: '/auth/signup',
   },
   {
     id: 'pro',
-    name: 'Pro',
-    price: '₩49,900',
+    name: PLAN_DISPLAY_NAMES.pro,
+    price: formatKRW(PLAN_PRICES.pro),
     sub: '/월',
-    credits: 200,
+    credits: PLAN_CREDITS.pro,
     highlight: true,
     badge: '인기',
-    features: ['월 200회 생성', '4K 해상도 (Nano Banana 2)', 'SMS + 카카오 공유 무제한', 'HTML 상세페이지 내보내기', '무제한 내역 보관'],
+    features: [
+      `월 ${PLAN_CREDITS.pro}크레딧`,
+      '4K 해상도 (Nano Banana 2)',
+      'SMS + 카카오 공유 무제한',
+      'HTML 상세페이지 내보내기',
+      '무제한 내역 보관',
+    ],
     cta: 'Pro 시작하기',
     href: '/auth/signup',
   },
   {
     id: 'business',
-    name: 'Business',
-    price: '₩149,000',
+    name: PLAN_DISPLAY_NAMES.business,
+    price: formatKRW(PLAN_PRICES.business),
     sub: '/월',
-    credits: 1000,
+    credits: PLAN_CREDITS.business,
     highlight: false,
-    features: ['월 1,000회 생성', '팀 계정 5명', 'API 접근 권한', '커스텀 브랜딩', '전담 지원'],
+    features: [
+      `월 ${PLAN_CREDITS.business.toLocaleString()}크레딧`,
+      '팀 계정 5명',
+      'API 접근 권한',
+      '커스텀 브랜딩',
+      '전담 지원',
+    ],
     cta: '문의하기',
     href: 'mailto:hello@productcraft.ai',
   },
@@ -235,7 +280,7 @@ export default function LandingPage() {
                   작동 방식 보기
                 </Link>
               </div>
-              <p className="text-[12px] text-[#4b4b4d]">카드 등록 없음 · 월 3회 무료 제공</p>
+              <p className="text-[12px] text-[#4b4b4d]">카드 등록 없음 · 가입 시 {FREE_INITIAL_CREDITS} 크레딧 제공</p>
             </div>
 
             {/* ── Mock Output — 0px radius (campaign-tile 규칙) ── */}
@@ -369,7 +414,7 @@ export default function LandingPage() {
               { val: '30초', label: '간편 모드 평균 생성 시간' },
               { val: '4K', label: 'Nano Banana 2 최대 해상도' },
               { val: '9개', label: 'AI 에이전트 동시 협업' },
-              { val: '무료', label: '월 3회 · 카드 없이 시작' },
+              { val: '무료', label: `가입 시 ${FREE_INITIAL_CREDITS}크레딧 · 카드 없이 시작` },
             ].map((stat) => (
               <div key={stat.label} className="py-8 px-4 md:px-8 text-center">
                 <p
@@ -906,7 +951,8 @@ export default function LandingPage() {
             상품 등록의<br className="hidden md:block" /> 새 기준.
           </h2>
           <p className="text-[15px] font-medium text-[#9e9ea0] mb-10 max-w-md mx-auto leading-relaxed">
-            카드 등록 없이 월 3회 무료. 지금 바로 사진 한 장으로 시작해보세요.
+            카드 등록 없이 가입 시 {FREE_INITIAL_CREDITS}크레딧 무료 제공.
+            지금 바로 사진 한 장으로 시작해보세요.
           </p>
           <div className="flex flex-wrap items-center justify-center gap-3">
             <Link

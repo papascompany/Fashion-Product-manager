@@ -82,6 +82,32 @@ export type DetailSectionType = DetailSection['type']
 export type SectionKind = 'naming' | 'tagline' | 'description'
 export type Resolution = '1K' | '2K' | '4K'
 
+/**
+ * TYP-10 — DetailSection 판별 유니온에 새 variant 가 추가될 때 컴파일 단계에서
+ * 누락을 잡기 위한 exhaustive 가드.
+ *
+ * 사용 패턴:
+ *   switch (section.type) {
+ *     case 'hero': ...
+ *     case 'features': ...
+ *     // ...모든 case 처리...
+ *     default: return assertExhaustiveDetailSection(section)
+ *   }
+ *
+ * 새 variant 가 추가됐는데 switch 가 누락하면 `never` 가 아닌 타입이 흘러
+ * TypeScript 컴파일 에러로 보고된다. 호출 후엔 안전하게 null 반환 가능.
+ */
+export function assertExhaustiveDetailSection(section: never): null {
+  if (process.env.NODE_ENV !== 'production') {
+    // dev 에서는 빠르게 인지하도록 경고. prod 는 silent null 로 graceful.
+    console.warn(
+      '[studio] Unhandled DetailSection variant — TYP-10 exhaustive guard hit:',
+      section
+    )
+  }
+  return null
+}
+
 // ─── 타입 정의 ─────────────────────────────────────────────────────────────
 
 export type StudioMode = 'quick' | 'studio'

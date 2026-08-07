@@ -19,6 +19,7 @@ import {
   DETAIL_PAGE_PLAN_SYSTEM_PROMPT,
   buildDetailPagePlanPrompt,
 } from '@/lib/prompts/detail-page-plan'
+import { checkCreditGuard, deductCredits } from '@/lib/credit-guard'
 
 export const runtime = 'edge'
 export const dynamic = 'force-dynamic'
@@ -49,6 +50,15 @@ export async function POST(request: NextRequest) {
 
     const p = parsed.data
 
+    // BIZ-06 — Pro+ 플랜 게이트 + 2 크레딧 차감 (상세페이지 섹션 자동 조립)
+    const guard = await checkCreditGuard({ userId: user.id, operation: 'detail_page' })
+    if (!guard.allowed) {
+      return NextResponse.json(
+        { error: guard.reason, code: guard.code, upgradeUrl: guard.upgradeUrl, guardResult: guard },
+        { status: 402 }
+      )
+    }
+
     const result = await runWithFallback('detail_page', (model) =>
       generateObject({
         model,
@@ -74,6 +84,9 @@ export async function POST(request: NextRequest) {
         refinement_prompt: p.refinement ?? null,
       })
     }
+
+    // 성공 후 크레딧 차감
+    await deductCredits({ userId: user.id, operation: 'detail_page' })
 
     return NextResponse.json({ sections })
   } catch (err) {

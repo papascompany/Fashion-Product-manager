@@ -23,6 +23,30 @@ import type { AspectRatio, Resolution } from '@/lib/ai/image/types'
 import { getResolutionForPlan } from '@/lib/plan-settings'
 import type { Plan } from '@/lib/plan-settings'
 
+/**
+ * BIZ-10 — 썸네일 동적 단가.
+ * 기존 고정 3 크레딧 → count × ratios 비례 차감.
+ *
+ * 정책 (4 단계 — 단가 정책이므로 운영 결정 필요):
+ *   1장        → 1 크레딧
+ *   2~3장      → 2 크레딧
+ *   4~6장      → 3 크레딧 (기존값 유지)
+ *   7~12장     → 5 크레딧
+ *   13~24장    → 8 크레딧
+ *   25~48장    → 12 크레딧
+ *
+ * 가장 흔한 사용 (1 ratio × 1 count = 1장) 부담을 줄이고, 12 ratios × 4 count = 48장
+ * 같은 극단 사용은 비용을 반영하도록 설계.
+ */
+function thumbnailCredits(totalImages: number): number {
+  if (totalImages <= 1) return 1
+  if (totalImages <= 3) return 2
+  if (totalImages <= 6) return 3
+  if (totalImages <= 12) return 5
+  if (totalImages <= 24) return 8
+  return 12
+}
+
 // ─── 스키마 ─────────────────────────────────────────────────────────────────
 
 const ThumbnailSchema = z.object({
@@ -108,11 +132,15 @@ export async function POST(request: NextRequest) {
     const userPlan = (profileRow?.plan ?? 'free') as Plan
     const resolution = await getResolutionForPlan(userPlan)
 
-    // ─── 크레딧 가드 ──────────────────────────────────────────────────────
+    // ─── 크레딧 가드 (BIZ-10: 동적 단가) ──────────────────────────────────
+    // 핀 처리 후 실제 생성될 비율 × count 로 비용 계산
+    const expectedImages = finalRatios.length * count
+    const dynamicCredits = thumbnailCredits(expectedImages)
     const guard = await checkCreditGuard({
       userId: user.id,
       operation: 'studio_thumbnail',
       resolution: resolution as Resolution,
+      creditsOverride: dynamicCredits,
     })
 
     if (!guard.allowed) {
@@ -186,19 +214,23 @@ export async function POST(request: NextRequest) {
       prompt,
     }))
 
+    // BIZ-10 — 실제 생성된 이미지 수 기준 단가 재계산 (provider 가 일부 실패할 수도 있으므로)
+    const actualCredits = thumbnailCredits(genResult.images.length || expectedImages)
+
     const { data: rpcResult, error: rpcError } = await supabase.rpc(
       'record_thumbnail_generation',
       {
         p_user_id:    user.id,
         p_project_id: projectId,
         p_thumbnails: thumbnailPayload,
-        p_credits:    3,
+        p_credits:    actualCredits,
         p_metadata:   {
           count: genResult.images.length,
           resolution,
           aspectRatios,
           elapsedMs: elapsed,
           requestId: genResult.requestId,
+          dynamicCredits: actualCredits,
         },
       }
     )

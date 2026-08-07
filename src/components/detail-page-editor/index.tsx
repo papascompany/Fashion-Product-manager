@@ -13,7 +13,7 @@
  * Nike 디자인 — 0px radius, hairline border
  */
 
-import { useState, useCallback, useRef } from 'react'
+import { useEffect, useRef, useState, useCallback } from 'react'
 import { Plus, GripVertical, MoreHorizontal, Trash2, Download, Save, ExternalLink, X, Loader2, Sparkles, Image as ImageIcon } from 'lucide-react'
 import { EditableText } from '@/components/editable-text'
 import { PointKeywords } from '@/components/point-keywords'
@@ -417,62 +417,145 @@ export function DetailPageEditor({ sections, onChange, projectId, defaults }: De
 
       {/* 미리보기 모달 */}
       {previewHtml && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4"
-          style={{ backgroundColor: 'rgba(0,0,0,0.7)' }}
-          onClick={() => setPreviewHtml(null)}
-        >
-          <div
-            className="w-full max-w-3xl bg-white overflow-hidden"
-            style={{ border: '1px solid #e5e5e5' }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="px-5 py-3 flex items-center justify-between gap-3 flex-wrap" style={{ borderBottom: '1px solid #e5e5e5' }}>
-              <div className="text-[13px] font-black text-[#111111]">상세페이지 미리보기</div>
-              {/* opt-in 이미지 내보내기 — 플랫폼 프리셋 선택 후 버튼 클릭 시에만 실행 */}
-              <div className="flex items-center gap-2 flex-wrap">
-                <select
-                  value={rasterPreset.id}
-                  onChange={(e) => {
-                    const next = PLATFORM_PRESETS.find((p) => p.id === e.target.value)
-                    if (next) setRasterPreset(next)
-                  }}
-                  disabled={rasterizing}
-                  className="px-2 h-8 text-[12px] font-semibold text-[#111111] bg-white focus:outline-none rounded-full disabled:opacity-50"
-                  style={{ border: '1px solid #cacacb' }}
-                  title="내보낼 판매 플랫폼 규격"
-                >
-                  {PLATFORM_PRESETS.map((p) => (
-                    <option key={p.id} value={p.id}>{p.label} · {p.width}px</option>
-                  ))}
-                </select>
-                <button
-                  onClick={handleRasterize}
-                  disabled={rasterizing}
-                  className="inline-flex items-center gap-1.5 px-3 h-8 rounded-full text-[12px] font-semibold text-[#111111] hover:bg-[#f5f5f5] transition-colors disabled:opacity-50"
-                  style={{ border: '1px solid #cacacb' }}
-                  title="현재 미리보기를 플랫폼 규격 이미지(ZIP)로 내보냅니다"
-                >
-                  {rasterizing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ImageIcon className="w-3.5 h-3.5" />}
-                  이미지로 내보내기
-                </button>
-                <button onClick={() => setPreviewHtml(null)} className="p-1 text-[#707072] hover:text-[#111111]">
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-            </div>
-            <iframe
-              ref={previewFrameRef}
-              title="상세페이지 미리보기"
-              srcDoc={previewHtml}
-              sandbox="allow-same-origin"
-              className="w-full bg-white"
-              style={{ height: '70vh' }}
-            />
-          </div>
-        </div>
+        <PreviewModal
+          html={previewHtml}
+          onClose={() => setPreviewHtml(null)}
+          frameRef={previewFrameRef}
+          rasterPreset={rasterPreset}
+          onChangeRasterPreset={setRasterPreset}
+          rasterizing={rasterizing}
+          onRasterize={handleRasterize}
+        />
       )}
     </>
+  )
+}
+
+// ─── 미리보기 모달 (UX-04 a11y + UX-09 sandbox + opt-in 이미지 내보내기) ───
+interface PreviewModalProps {
+  html: string
+  onClose: () => void
+  /** 클라이언트 래스터화 폴백이 캡처 대상으로 쓰는 iframe ref */
+  frameRef: React.RefObject<HTMLIFrameElement | null>
+  rasterPreset: PlatformPreset
+  onChangeRasterPreset: (p: PlatformPreset) => void
+  rasterizing: boolean
+  onRasterize: () => void
+}
+
+function PreviewModal({
+  html, onClose, frameRef,
+  rasterPreset, onChangeRasterPreset, rasterizing, onRasterize,
+}: PreviewModalProps) {
+  const panelRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const previouslyFocused = document.activeElement as HTMLElement | null
+    const first = panelRef.current?.querySelector<HTMLElement>(
+      'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+    )
+    first?.focus()
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.stopPropagation()
+        onClose()
+        return
+      }
+      if (e.key === 'Tab' && panelRef.current) {
+        const focusable = Array.from(
+          panelRef.current.querySelectorAll<HTMLElement>(
+            'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+          )
+        )
+        if (focusable.length === 0) return
+        const firstEl = focusable[0]
+        const lastEl = focusable[focusable.length - 1]
+        const active = document.activeElement as HTMLElement | null
+        if (e.shiftKey && active === firstEl) {
+          e.preventDefault()
+          lastEl.focus()
+        } else if (!e.shiftKey && active === lastEl) {
+          e.preventDefault()
+          firstEl.focus()
+        }
+      }
+    }
+    document.addEventListener('keydown', onKey)
+    const prevOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => {
+      document.removeEventListener('keydown', onKey)
+      document.body.style.overflow = prevOverflow
+      previouslyFocused?.focus?.()
+    }
+  }, [onClose])
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      style={{ backgroundColor: 'rgba(0,0,0,0.7)' }}
+      onClick={onClose}
+    >
+      <div
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="detail-preview-title"
+        className="w-full max-w-3xl bg-white overflow-hidden"
+        style={{ border: '1px solid #e5e5e5' }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="px-5 py-3 flex items-center justify-between gap-3 flex-wrap" style={{ borderBottom: '1px solid #e5e5e5' }}>
+          <div id="detail-preview-title" className="text-[13px] font-black text-[#111111]">상세페이지 미리보기</div>
+          {/* opt-in 이미지 내보내기 — 플랫폼 프리셋 선택 후 버튼 클릭 시에만 실행 */}
+          <div className="flex items-center gap-2 flex-wrap">
+            <select
+              value={rasterPreset.id}
+              onChange={(e) => {
+                const next = PLATFORM_PRESETS.find((p) => p.id === e.target.value)
+                if (next) onChangeRasterPreset(next)
+              }}
+              disabled={rasterizing}
+              aria-label="내보낼 판매 플랫폼 규격"
+              className="px-2 h-8 text-[12px] font-semibold text-[#111111] bg-white focus:outline-none rounded-full disabled:opacity-50"
+              style={{ border: '1px solid #cacacb' }}
+            >
+              {PLATFORM_PRESETS.map((p) => (
+                <option key={p.id} value={p.id}>{p.label} · {p.width}px</option>
+              ))}
+            </select>
+            <button
+              onClick={onRasterize}
+              disabled={rasterizing}
+              className="inline-flex items-center gap-1.5 px-3 h-8 rounded-full text-[12px] font-semibold text-[#111111] hover:bg-[#f5f5f5] transition-colors disabled:opacity-50"
+              style={{ border: '1px solid #cacacb' }}
+              title="현재 미리보기를 플랫폼 규격 이미지(ZIP)로 내보냅니다"
+            >
+              {rasterizing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ImageIcon className="w-3.5 h-3.5" />}
+              이미지로 내보내기
+            </button>
+            <button
+              onClick={onClose}
+              aria-label="미리보기 닫기"
+              className="p-1 text-[#707072] hover:text-[#111111]"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+        <iframe
+          ref={frameRef}
+          title="상세페이지 미리보기"
+          srcDoc={html}
+          // UX-09 — allow-scripts 는 부여하지 않는다(콘텐츠 스크립트 실행 불가 = 부모 origin 접근 불가).
+          // allow-same-origin 은 opt-in 클라이언트 래스터화 폴백이 iframe DOM 을 캡처하는 데 필요하며,
+          // 스크립트가 실행될 수 없으므로 단독으로는 권한 상승 벡터가 되지 않는다.
+          // 서버 렌더(VPS)가 구성되면 이 경로는 사용되지 않는다.
+          sandbox="allow-same-origin"
+          referrerPolicy="no-referrer"
+          className="w-full bg-white"
+          style={{ height: '70vh' }}
+        />
+      </div>
+    </div>
   )
 }
 
