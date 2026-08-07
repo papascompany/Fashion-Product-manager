@@ -216,9 +216,21 @@ export function applyShotResult(
 }
 
 /**
- * 예상 크레딧 계산 — 현행 단가 기준(썸네일 3 / AI Fitting 1장 2).
- * ⚠️ 번들 단가는 오너 결정 대기 항목 — 확정 시 이 함수만 갱신.
+ * 예상 크레딧 계산 — 현행 서버 단가와 정합.
+ *
+ * 컷 오케스트레이션은 **작업당 이미지 1장**(비율 1개 × count 1)만 요청하므로:
+ *   - thumbnail 엔진 : `thumbnailCredits(1)` = 1 크레딧 (BIZ-10 동적 단가, 감사 브랜치)
+ *   - fitting 엔진   : `aiFittingCredits(1)` = 2 크레딧 (Phase 4 D안)
+ *
+ * ⚠️ 서버 단가(`thumbnailCredits`/`aiFittingCredits`)가 바뀌면 이 값도 함께 갱신할 것.
+ *    표시용 추정치일 뿐이며 실제 차감은 서버가 집행한다.
  */
+const CREDITS_PER_THUMBNAIL_JOB = 1
+const CREDITS_PER_FITTING_JOB = 2
+
 export function estimateShotCredits(jobs: ShotJob[]): number {
-  return jobs.reduce((sum, j) => sum + (j.engine === 'thumbnail' ? 3 : 2), 0)
+  return jobs.reduce(
+    (sum, j) => sum + (j.engine === 'thumbnail' ? CREDITS_PER_THUMBNAIL_JOB : CREDITS_PER_FITTING_JOB),
+    0,
+  )
 }
