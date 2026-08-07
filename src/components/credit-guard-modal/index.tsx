@@ -1,36 +1,54 @@
 'use client'
 
+import { useEffect, useRef } from 'react'
 import { Zap, ArrowRight, X, CreditCard } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Dialog } from '@/components/ui/dialog'
 import type { CreditGuardResult } from '@/lib/credit-guard'
+import {
+  PLAN_PRICES,
+  PLAN_CREDITS,
+  PLAN_DISPLAY_NAMES,
+  formatKRW,
+} from '@/lib/plan-settings-shared'
 
 // ─── Plan 업그레이드 정보 ──────────────────────────────────────────────────
+// UX-02 — billing-client / 랜딩 / 모달 가격표 일원화. 모든 수치는 SoT 에서 import.
 
-const PLANS = [
+interface PlanRow {
+  id: 'starter' | 'pro' | 'business'
+  name: string
+  price: string
+  period: string
+  credits: number
+  highlight: boolean
+  badge?: string
+}
+
+const PLANS: PlanRow[] = [
   {
     id: 'starter',
-    name: 'Starter',
-    price: '₩19,900',
+    name: PLAN_DISPLAY_NAMES.starter,
+    price: formatKRW(PLAN_PRICES.starter),
     period: '/월',
-    credits: 100,
+    credits: PLAN_CREDITS.starter,
     highlight: false,
   },
   {
     id: 'pro',
-    name: 'Pro',
-    price: '₩49,900',
+    name: PLAN_DISPLAY_NAMES.pro,
+    price: formatKRW(PLAN_PRICES.pro),
     period: '/월',
-    credits: 500,
+    credits: PLAN_CREDITS.pro,
     highlight: true,
     badge: '인기',
   },
   {
     id: 'business',
-    name: 'Business',
-    price: '₩149,000',
+    name: PLAN_DISPLAY_NAMES.business,
+    price: formatKRW(PLAN_PRICES.business),
     period: '/월',
-    credits: 2000,
+    credits: PLAN_CREDITS.business,
     highlight: false,
   },
 ]
@@ -57,6 +75,54 @@ export function CreditGuardModal({
   reason,
   creditsLeft = 0,
 }: CreditGuardModalProps) {
+  // UX-04 — a11y: ESC 키 + focus trap + 초기 focus + body scroll lock
+  const panelRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!open) return
+    const previouslyFocused = document.activeElement as HTMLElement | null
+    // 첫 focusable 에 포커스
+    const first = panelRef.current?.querySelector<HTMLElement>(
+      'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+    )
+    first?.focus()
+
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.stopPropagation()
+        onClose()
+        return
+      }
+      if (e.key === 'Tab' && panelRef.current) {
+        const focusable = Array.from(
+          panelRef.current.querySelectorAll<HTMLElement>(
+            'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+          )
+        )
+        if (focusable.length === 0) return
+        const firstEl = focusable[0]
+        const lastEl = focusable[focusable.length - 1]
+        const active = document.activeElement as HTMLElement | null
+        if (e.shiftKey && active === firstEl) {
+          e.preventDefault()
+          lastEl.focus()
+        } else if (!e.shiftKey && active === lastEl) {
+          e.preventDefault()
+          firstEl.focus()
+        }
+      }
+    }
+    document.addEventListener('keydown', onKey)
+    // body scroll lock
+    const prevOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+
+    return () => {
+      document.removeEventListener('keydown', onKey)
+      document.body.style.overflow = prevOverflow
+      previouslyFocused?.focus?.()
+    }
+  }, [open, onClose])
+
   if (!open) return null
 
   const isCreditsIssue = reason === 'insufficient_credits'
@@ -70,6 +136,11 @@ export function CreditGuardModal({
         onClick={onClose}
       >
         <div
+          ref={panelRef}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="credit-guard-title"
+          aria-describedby="credit-guard-desc"
           className="relative w-full max-w-lg bg-white overflow-hidden"
           onClick={(e) => e.stopPropagation()}
         >
@@ -88,16 +159,17 @@ export function CreditGuardModal({
               </div>
               <button
                 onClick={onClose}
+                aria-label="모달 닫기"
                 className="w-8 h-8 rounded-full flex items-center justify-center hover:bg-[#1c1c1c] transition-colors"
               >
                 <X className="w-4 h-4 text-white" strokeWidth={2.5} />
               </button>
             </div>
 
-            <h2 className="text-[24px] font-black text-white">
+            <h2 id="credit-guard-title" className="text-[24px] font-black text-white">
               {isCreditsIssue ? '크레딧이 부족해요' : '플랜 업그레이드 필요'}
             </h2>
-            <p className="mt-1 text-[#9e9ea0] text-[13px] leading-relaxed">
+            <p id="credit-guard-desc" className="mt-1 text-[#9e9ea0] text-[13px] leading-relaxed">
               {isCreditsIssue
                 ? `현재 잔여 크레딧: ${creditsLeft}개${guardResult.creditsRequired ? ` · 필요: ${guardResult.creditsRequired}개` : ''}`
                 : guardResult.reason ?? '이 기능은 상위 플랜에서 이용할 수 있습니다.'}

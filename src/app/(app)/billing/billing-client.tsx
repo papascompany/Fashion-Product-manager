@@ -4,50 +4,74 @@ import { useEffect, useState } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { Check, ChevronRight } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import {
+  PLAN_PRICES,
+  PLAN_CREDITS,
+  PLAN_DISPLAY_NAMES,
+  TOPUP_PRICES,
+  TOPUP_CREDITS,
+  formatKRW,
+  type Plan,
+  type TopupPack,
+} from '@/lib/plan-settings-shared'
 
 // ─── 플랜 정의 ────────────────────────────────────────────────────────────────
+// UX-02 — 가격/크레딧 수치는 모두 plan-settings-shared 의 SoT 에서 import.
+// features 카피는 UI 전용 (변경 시 page.tsx 와 함께 검토할 것).
 
-const PLANS = [
+interface PlanRow {
+  id: Plan
+  name: string
+  price: number
+  priceLabel: string
+  credits: number
+  period: string
+  features: string[]
+  highlight: boolean
+  badge?: string
+}
+
+const PLANS: PlanRow[] = [
   {
     id: 'free',
-    name: 'Free',
-    price: 0,
+    name: PLAN_DISPLAY_NAMES.free,
+    price: PLAN_PRICES.free,
     priceLabel: '무료',
-    credits: 3,
+    credits: PLAN_CREDITS.free,
     period: '월',
     features: [
-      '월 3크레딧 (체험)',
+      '가입 시 3 크레딧 제공',
       '간편 모드 전용',
-      '2K 해상도',
+      '1K 해상도',
       '생성 내역 7일 보관',
     ],
     highlight: false,
   },
   {
     id: 'starter',
-    name: 'Starter',
-    price: 19900,
-    priceLabel: '₩19,900',
-    credits: 50,
+    name: PLAN_DISPLAY_NAMES.starter,
+    price: PLAN_PRICES.starter,
+    priceLabel: formatKRW(PLAN_PRICES.starter),
+    credits: PLAN_CREDITS.starter,
     period: '월',
     features: [
-      '월 50크레딧',
+      `월 ${PLAN_CREDITS.starter}크레딧`,
       '간편 + 스튜디오 모드',
       '최대 2K 해상도',
       '생성 내역 30일 보관',
-      'SMS 공유 5건/월',
+      'SMS 공유 5건/일',
     ],
     highlight: false,
   },
   {
     id: 'pro',
-    name: 'Pro',
-    price: 49900,
-    priceLabel: '₩49,900',
-    credits: 200,
+    name: PLAN_DISPLAY_NAMES.pro,
+    price: PLAN_PRICES.pro,
+    priceLabel: formatKRW(PLAN_PRICES.pro),
+    credits: PLAN_CREDITS.pro,
     period: '월',
     features: [
-      '월 200크레딧',
+      `월 ${PLAN_CREDITS.pro}크레딧`,
       '간편 + 스튜디오 모드',
       '4K 해상도 (Nano Banana 2)',
       '생성 내역 무제한 보관',
@@ -59,13 +83,13 @@ const PLANS = [
   },
   {
     id: 'business',
-    name: 'Business',
-    price: 149000,
-    priceLabel: '₩149,000',
-    credits: 1000,
+    name: PLAN_DISPLAY_NAMES.business,
+    price: PLAN_PRICES.business,
+    priceLabel: formatKRW(PLAN_PRICES.business),
+    credits: PLAN_CREDITS.business,
     period: '월',
     features: [
-      '월 1,000크레딧',
+      `월 ${PLAN_CREDITS.business.toLocaleString()}크레딧`,
       '모든 Pro 기능',
       '팀 계정 5명',
       'API 접근 권한',
@@ -78,10 +102,19 @@ const PLANS = [
 
 // ─── 크레딧 충전 팩 ──────────────────────────────────────────────────────────
 
-const TOPUP_PACKS = [
-  { id: 'topup10',  credits: 10,  price: 3000,   priceLabel: '₩3,000',  highlight: false },
-  { id: 'topup30',  credits: 30,  price: 8000,   priceLabel: '₩8,000',  highlight: true, badge: '추천' },
-  { id: 'topup100', credits: 100, price: 24000,  priceLabel: '₩24,000', highlight: false },
+interface TopupRow {
+  id: TopupPack
+  credits: number
+  price: number
+  priceLabel: string
+  highlight: boolean
+  badge?: string
+}
+
+const TOPUP_PACKS: TopupRow[] = [
+  { id: 'topup10',  credits: TOPUP_CREDITS.topup10,  price: TOPUP_PRICES.topup10,  priceLabel: formatKRW(TOPUP_PRICES.topup10),  highlight: false },
+  { id: 'topup30',  credits: TOPUP_CREDITS.topup30,  price: TOPUP_PRICES.topup30,  priceLabel: formatKRW(TOPUP_PRICES.topup30),  highlight: true, badge: '추천' },
+  { id: 'topup100', credits: TOPUP_CREDITS.topup100, price: TOPUP_PRICES.topup100, priceLabel: formatKRW(TOPUP_PRICES.topup100), highlight: false },
 ]
 
 interface UsageEvent {
@@ -127,7 +160,34 @@ export function BillingClient({ userId, currentPlan, creditsLeft, email, usageEv
     return () => clearTimeout(t)
   }, [searchParams, router])
 
-  const handleUpgrade = async (planId: string) => {
+  // WH-02 — orderId 와 expected_amount 를 서버에서 발급받아 Toss SDK 에 그대로 전달.
+  // 클라이언트 직접 생성 (`plan-${planId}-${userId}-${Date.now()}`) 폐기.
+  async function preparePayment(body: { plan: Plan } | { topup: TopupPack }): Promise<{ orderId: string; amount: number } | null> {
+    const res = await fetch('/api/payments/prepare', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+    if (!res.ok) {
+      let message = '결제 준비 실패'
+      try {
+        const j = await res.json()
+        if (typeof j.error === 'string') message = j.error
+      } catch {
+        // ignore
+      }
+      setBanner({ kind: 'error', text: message })
+      return null
+    }
+    const j = await res.json()
+    if (typeof j.orderId !== 'string' || typeof j.amount !== 'number') {
+      setBanner({ kind: 'error', text: '결제 준비 응답이 올바르지 않습니다.' })
+      return null
+    }
+    return { orderId: j.orderId, amount: j.amount }
+  }
+
+  const handleUpgrade = async (planId: Plan) => {
     if (planId === 'free' || planId === currentPlan) return
 
     const plan = PLANS.find((p) => p.id === planId)
@@ -148,13 +208,15 @@ export function BillingClient({ userId, currentPlan, creditsLeft, email, usageEv
 
     setLoadingPlan(planId)
     try {
-      // eslint-disable-next-line react-hooks/purity
-      const orderId = `plan-${planId}-${userId}-${Date.now()}`
+      // WH-02 — 서버에서 orderId + expected amount 발급
+      const prepared = await preparePayment({ plan: planId })
+      if (!prepared) return
+
       const origin = window.location.origin
       const tossPayments = window.TossPayments(clientKey)
       await tossPayments.requestPayment('카드', {
-        amount: plan.price,
-        orderId,
+        amount: prepared.amount,
+        orderId: prepared.orderId,
         orderName: `ProductCraft AI ${plan.name} 플랜 (월 구독)`,
         customerName: email.split('@')[0] || '구독자',
         customerEmail: email,
@@ -169,7 +231,7 @@ export function BillingClient({ userId, currentPlan, creditsLeft, email, usageEv
     }
   }
 
-  const handleTopup = async (pack: typeof TOPUP_PACKS[number]) => {
+  const handleTopup = async (pack: TopupRow) => {
     const clientKey = process.env.NEXT_PUBLIC_TOSS_CLIENT_KEY
     if (!clientKey) {
       setBanner({ kind: 'error', text: 'Toss 클라이언트 키가 설정되지 않았습니다.' })
@@ -182,13 +244,15 @@ export function BillingClient({ userId, currentPlan, creditsLeft, email, usageEv
     const loadingKey = `topup-${pack.id}`
     setLoadingPlan(loadingKey)
     try {
-      // eslint-disable-next-line react-hooks/purity
-      const orderId = `topup-${pack.id}-${userId}-${Date.now()}`
+      // WH-02 — 서버에서 orderId + expected amount 발급
+      const prepared = await preparePayment({ topup: pack.id })
+      if (!prepared) return
+
       const origin = window.location.origin
       const tossPayments = window.TossPayments(clientKey)
       await tossPayments.requestPayment('카드', {
-        amount: pack.price,
-        orderId,
+        amount: prepared.amount,
+        orderId: prepared.orderId,
         orderName: `ProductCraft AI 크레딧 ${pack.credits}개 충전`,
         customerName: email.split('@')[0] || '구매자',
         customerEmail: email,
@@ -273,7 +337,7 @@ export function BillingClient({ userId, currentPlan, creditsLeft, email, usageEv
               }}
             >
               {/* 인기 배지 */}
-              {'badge' in plan && (
+              {plan.badge && (
                 <div className="mb-3">
                   <span className="px-2 py-0.5 bg-[#111111] text-white text-[9px] font-black tracking-widest">
                     {plan.badge}
@@ -295,7 +359,9 @@ export function BillingClient({ userId, currentPlan, creditsLeft, email, usageEv
                 )}
               </div>
               <p className="text-[12px] text-[#707072] mb-5">
-                월 {plan.credits.toLocaleString()}크레딧
+                {plan.id === 'free'
+                  ? `가입 시 ${plan.credits.toLocaleString()}크레딧`
+                  : `월 ${plan.credits.toLocaleString()}크레딧`}
               </p>
 
               <ul className="space-y-2.5 flex-1 mb-6">

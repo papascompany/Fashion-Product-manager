@@ -1,9 +1,11 @@
 /**
  * T-08: 크레딧 가드 미들웨어 단위 테스트
- * Sprint 0 — TDD Red 단계 (최초 실행 시 반드시 실패)
+ * Track 3 — TST-04 fix:
+ *   mockPlan 누락으로 4건 실패하던 문제 해결.
+ *   각 it 의 케이스 의도에 맞게 plan 을 명시 주입한다.
  */
 
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect } from 'vitest'
 
 // 크레딧 소모량 상수 (기획 문서 기준)
 const CREDIT_COSTS = {
@@ -14,18 +16,19 @@ const CREDIT_COSTS = {
 
 describe('T-08: CreditGuard', () => {
   /**
-   * Given: 크레딧이 5개 남은 사용자
+   * Given: 크레딧이 5개 남은 starter 사용자
    * When: 간편 모드 실행 (1 크레딧 소모)
    * Then: 통과(allowed: true)하고 잔여 크레딧 4개를 반환해야 한다
    */
   it('잔여 크레딧이 충분할 때 요청을 허용해야 한다', async () => {
-    // TODO: backend-dev — lib/credit-guard.ts 구현 필요
     const { checkCreditGuard } = await import('@/lib/credit-guard')
 
     const result = await checkCreditGuard({
       userId: 'test-user-id',
       operation: 'quick',
-      mockCreditsLeft: 5, // 테스트용 mock
+      // 2K(기본) 가드 통과를 위해 starter 이상 지정.
+      mockPlan: 'starter',
+      mockCreditsLeft: 5,
     })
 
     expect(result.allowed).toBe(true)
@@ -33,7 +36,7 @@ describe('T-08: CreditGuard', () => {
   })
 
   /**
-   * Given: 크레딧이 0개인 사용자
+   * Given: 크레딧이 0개인 starter 사용자
    * When: 간편 모드 실행 시도
    * Then: 차단(allowed: false)하고 업그레이드 안내를 반환해야 한다
    */
@@ -43,6 +46,7 @@ describe('T-08: CreditGuard', () => {
     const result = await checkCreditGuard({
       userId: 'test-user-id',
       operation: 'quick',
+      mockPlan: 'starter',
       mockCreditsLeft: 0,
     })
 
@@ -52,7 +56,7 @@ describe('T-08: CreditGuard', () => {
   })
 
   /**
-   * Given: 크레딧이 2개 남은 사용자
+   * Given: 크레딧이 2개 남은 starter 사용자
    * When: 썸네일 생성 시도 (3 크레딧 소모)
    * Then: 크레딧 부족으로 차단해야 한다
    */
@@ -62,6 +66,8 @@ describe('T-08: CreditGuard', () => {
     const result = await checkCreditGuard({
       userId: 'test-user-id',
       operation: 'studio_thumbnail',
+      // 2K 기본 해상도 통과를 위해 starter.
+      mockPlan: 'starter',
       mockCreditsLeft: 2,
     })
 

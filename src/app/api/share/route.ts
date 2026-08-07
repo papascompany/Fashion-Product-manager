@@ -1,9 +1,15 @@
 /**
- * 공유 API (Sprint 3)
+ * 공유 API (Track 1 핫픽스 — SEC-NEW-01/02 + BIZ-08 SMS 일부)
  * POST /api/share
  *
- * method: 'sms' | 'kakao' | 'link'
- * CoolSMS — API 키 미설정 시 mock 응답 반환
+ * 보안 강화 사항:
+ *   - SEC-NEW-01: projectId 소유 검증 + productName/tagline 길이 제한
+ *     + shareUrl 호스트 화이트리스트 + 플랜별 일일 cap.
+ *   - SEC-NEW-02: shares.insert error 시 5xx 반환 (RLS 거부 → SMS 발송 차단).
+ *   - BIZ-08 (SMS 부분): Free 차단, Starter 5건/일, Pro/Business 30건/일.
+ *     카카오 공유는 클라이언트 SDK 에서 처리되므로 본 라우트는 SMS·link 만.
+ *
+ * runtime: nodejs (CoolSMS 가 crypto 모듈 사용).
  */
 
 import { NextResponse } from 'next/server'
@@ -11,54 +17,233 @@ import type { NextRequest } from 'next/server'
 import { z } from 'zod'
 import { createClient } from '@/lib/supabase/server'
 
+export const runtime = 'nodejs'
+export const maxDuration = 30
+
+// ─── 입력 스키마 ────────────────────────────────────────────────────────────
 const ShareSchema = z.object({
   method: z.enum(['sms', 'kakao', 'link']),
   projectId: z.string().uuid(),
-  // SEC-12: PII 검증 — 한국 전화번호 형식만 허용 (임의 문자열로 외부 API 호출 방지)
-  phone: z.string().regex(/^(\+82|0)1[0-9]-?\d{3,4}-?\d{4}$/, { message: '올바른 전화번호 형식이 아닙니다.' }).optional(),
-  productName: z.string(),
-  tagline: z.string(),
+  // 한국 휴대전화: 010-XXXX-XXXX (하이픈 옵션)
+  phone: z
+    .string()
+    .regex(/^010-?[0-9]{4}-?[0-9]{4}$/, { message: '올바른 휴대전화 번호 형식이 아닙니다.' })
+    .optional(),
+  productName: z.string().min(1).max(60, { message: '상품명은 60자 이내여야 합니다.' }),
+  tagline: z.string().min(1).max(120, { message: '태그라인은 120자 이내여야 합니다.' }),
   shareUrl: z.string().url(),
   thumbnailUrl: z.string().url().optional(),
 })
 
+// ─── 호스트 화이트리스트 ────────────────────────────────────────────────────
+const STATIC_ALLOWED_HOSTS = new Set<string>([
+  'productcraft.ai',
+  'www.productcraft.ai',
+  'productcraft-ai.vercel.app',
+])
+
+function isShareUrlAllowed(rawUrl: string): boolean {
+  try {
+    const u = new URL(rawUrl)
+    if (u.protocol !== 'https:' && u.protocol !== 'http:') return false
+    const host = u.host.toLowerCase()
+    if (STATIC_ALLOWED_HOSTS.has(host)) return true
+    const envHost = process.env.NEXT_PUBLIC_SITE_URL
+    if (envHost) {
+      try {
+        const allowed = new URL(envHost).host.toLowerCase()
+        if (host === allowed) return true
+      } catch {
+        // env 가 깨졌으면 무시
+      }
+    }
+    return false
+  } catch {
+    return false
+  }
+}
+
+// ─── 플랜별 일일 SMS 한도 ──────────────────────────────────────────────────
+type Plan = 'free' | 'starter' | 'pro' | 'business'
+
+const DAILY_SMS_CAP: Record<Plan, number> = {
+  free: 0,
+  starter: 5,
+  pro: 30,
+  business: 30,
+}
+
+const SHARE_EVENT_TYPE = 'share_sms_sent'
+
 export async function POST(request: NextRequest) {
   try {
     const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return NextResponse.json({ error: '인증 필요' }, { status: 401 })
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser()
+    if (authError || !user) {
+      return NextResponse.json({ error: '인증 필요' }, { status: 401 })
+    }
 
-    const body = await request.json()
-    const parsed = ShareSchema.safeParse(body)
+    // ─── 본문 파싱 ─────────────────────────────────────────────────────────
+    let raw: unknown
+    try {
+      raw = await request.json()
+    } catch {
+      return NextResponse.json({ error: '잘못된 요청 본문' }, { status: 400 })
+    }
+    const parsed = ShareSchema.safeParse(raw)
     if (!parsed.success) {
       return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 })
     }
 
     const { method, projectId, phone, productName, tagline, shareUrl } = parsed.data
 
-    // 공유 이벤트 기록 (channel = DB 컬럼명, target = 수신자)
-    await supabase.from('shares').insert({
+    // ─── shareUrl 호스트 화이트리스트 ───────────────────────────────────────
+    if (!isShareUrlAllowed(shareUrl)) {
+      return NextResponse.json(
+        { error: '허용되지 않은 공유 URL 입니다.' },
+        { status: 400 }
+      )
+    }
+
+    // ─── projectId 소유 검증 (SEC-NEW-01) ───────────────────────────────────
+    const { data: project, error: projectError } = await supabase
+      .from('projects')
+      .select('user_id')
+      .eq('id', projectId)
+      .maybeSingle()
+
+    if (projectError) {
+      console.error('[/api/share] project lookup error:', projectError.message)
+      return NextResponse.json({ error: '프로젝트 조회 실패' }, { status: 500 })
+    }
+    if (!project || (project as { user_id: string }).user_id !== user.id) {
+      // 존재하지 않거나 타인의 프로젝트 → 동일하게 404 로 응답 (정보 노출 방지)
+      return NextResponse.json({ error: '프로젝트를 찾을 수 없습니다.' }, { status: 404 })
+    }
+
+    // ─── SMS 방식: 사전 검증 (banned + 일일 cap) ──────────────────────────
+    if (method === 'sms') {
+      if (!phone) {
+        return NextResponse.json(
+          { error: 'SMS 발송에는 전화번호가 필요합니다.' },
+          { status: 400 }
+        )
+      }
+
+      // 사용자 plan + banned_at 조회
+      const { data: profile, error: profileError } = await supabase
+        .from('user_profiles')
+        .select('plan, banned_at')
+        .eq('id', user.id)
+        .single()
+
+      if (profileError || !profile) {
+        return NextResponse.json(
+          { error: '사용자 정보를 찾을 수 없습니다.' },
+          { status: 500 }
+        )
+      }
+
+      if ((profile as { banned_at: string | null }).banned_at) {
+        return NextResponse.json(
+          { error: '계정 사용이 정지되었습니다.' },
+          { status: 403 }
+        )
+      }
+
+      const plan = (profile as { plan: Plan }).plan
+      const cap = DAILY_SMS_CAP[plan] ?? 0
+      if (cap <= 0) {
+        return NextResponse.json(
+          {
+            error: '현재 플랜에서는 SMS 공유를 사용할 수 없습니다.',
+            upgradeUrl: '/billing',
+          },
+          { status: 402 }
+        )
+      }
+
+      // 오늘(자정 기준 UTC) 사용량 카운트
+      const startOfDay = new Date()
+      startOfDay.setUTCHours(0, 0, 0, 0)
+
+      const { count, error: countError } = await supabase
+        .from('usage_events')
+        .select('id', { count: 'exact', head: true })
+        .eq('user_id', user.id)
+        .eq('event_type', SHARE_EVENT_TYPE)
+        .gte('created_at', startOfDay.toISOString())
+
+      if (countError) {
+        console.error('[/api/share] usage count error:', countError.message)
+        return NextResponse.json(
+          { error: '사용량 확인에 실패했습니다.' },
+          { status: 500 }
+        )
+      }
+
+      if ((count ?? 0) >= cap) {
+        return NextResponse.json(
+          {
+            error: `오늘 SMS 공유 한도(${cap}건)를 초과했습니다.`,
+            upgradeUrl: '/billing',
+          },
+          { status: 402 }
+        )
+      }
+    }
+
+    // ─── shares 기록 (RLS 거부 시 5xx 로 SMS 차단) ────────────────────────
+    const { error: shareInsertError } = await supabase.from('shares').insert({
       project_id: projectId,
       user_id: user.id,
       channel: method,
       target: phone ?? null,
     })
 
+    if (shareInsertError) {
+      console.error('[/api/share] shares insert error:', shareInsertError.message)
+      return NextResponse.json(
+        { error: '공유 이벤트 기록에 실패했습니다.' },
+        { status: 500 }
+      )
+    }
+
     if (method === 'sms') {
-      // CoolSMS 연동
-      const result = await sendSMS({ phone: phone!, productName, tagline, shareUrl })
+      const result = await sendSMS({
+        phone: phone as string,
+        productName,
+        tagline,
+        shareUrl,
+      })
+
+      // 일일 카운터 기록 (성공 시점에만)
+      const { error: usageError } = await supabase.from('usage_events').insert({
+        user_id: user.id,
+        event_type: SHARE_EVENT_TYPE,
+        credits_used: 0,
+        metadata: { projectId, messageId: result.messageId },
+      })
+      if (usageError) {
+        // 카운트 누락은 운영 알람으로만, 사용자 응답은 성공 처리
+        console.warn('[/api/share] usage_events insert failed:', usageError.message)
+      }
+
       return NextResponse.json({ success: true, messageId: result.messageId })
     }
 
     if (method === 'kakao') {
-      // Kakao는 클라이언트 SDK에서 처리 (서버 미사용)
+      // Kakao 는 클라이언트 SDK 가 처리. shares 기록만 남기고 성공 반환.
       return NextResponse.json({ success: true, method: 'kakao' })
     }
 
-    // link copy — 서버 측 특별 처리 없음
+    // link copy — 별도 외부 호출 없음
     return NextResponse.json({ success: true, shareUrl })
   } catch (err) {
-    console.error('[/api/share]', err)
+    console.error('[/api/share]', err instanceof Error ? err.message : 'unknown')
     return NextResponse.json({ error: '공유 처리 중 오류' }, { status: 500 })
   }
 }
@@ -76,12 +261,11 @@ async function sendSMS(params: {
   const fromNumber = process.env.COOLSMS_FROM_NUMBER
 
   if (!apiKey || !apiSecret || !fromNumber) {
-    // API 키 미설정 시 Mock 응답 (개발/스테이징 환경) — 전화번호 로그 금지
+    // API 키 미설정 시 Mock 응답 (개발/스테이징) — 전화번호 로그 금지
     console.log('[CoolSMS Mock] SMS skipped — keys not configured')
     return { messageId: `mock-${Date.now()}` }
   }
 
-  // 실제 CoolSMS API 호출
   const timestamp = Date.now().toString()
   const { createHmac } = await import('crypto')
   const signature = createHmac('sha256', apiSecret)
@@ -104,12 +288,18 @@ async function sendSMS(params: {
   })
 
   if (!response.ok) {
-    const err = await response.json()
-    throw new Error(err.message ?? 'CoolSMS 발송 실패')
+    let errMessage = 'CoolSMS 발송 실패'
+    try {
+      const err = (await response.json()) as { message?: string }
+      errMessage = err?.message ?? errMessage
+    } catch {
+      // body 가 비어있거나 JSON 이 아닐 수 있음
+    }
+    throw new Error(errMessage)
   }
 
-  const data = await response.json()
-  return { messageId: data.groupId ?? `sms-${Date.now()}` }
+  const data = (await response.json()) as { groupId?: string }
+  return { messageId: data?.groupId ?? `sms-${Date.now()}` }
 }
 
 function buildSMSText(params: { productName: string; tagline: string; shareUrl: string }): string {

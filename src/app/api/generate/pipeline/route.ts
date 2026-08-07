@@ -26,7 +26,11 @@ import { streamDescription, generateDescription } from '@/lib/ai/generators/desc
 import { fetchTrendKeywords } from '@/lib/trends/trend-fetcher'
 import { checkCreditGuard, deductCredits } from '@/lib/credit-guard'
 import { UserIntentSchema, type PipelineEvent, type PipelineStep } from '@/lib/ai/types'
-import { isSafeImageUrl, MAX_BASE64_LENGTH } from '@/lib/security'
+import {
+  isSafeImageUrl,
+  MAX_BASE64_LENGTH,
+  sanitizeErrorMessage,
+} from '@/lib/security'
 
 // ─── 런타임 설정 ────────────────────────────────────────────────────────────
 
@@ -94,26 +98,14 @@ export async function POST(request: NextRequest) {
     async start(controller) {
       // 현재 진행 중인 step — outer catch 가 어느 단계에서 실패했는지 보고용
       let currentStep: PipelineStep | undefined = undefined
+      // BIZ-12 — 실패 시 projects.status='failed' 를 위해 projectId 보존
+      let createdProjectId: string | undefined = undefined
       const emit = (event: PipelineEvent) => controller.enqueue(sseEvent(event))
       const fail = (step: PipelineStep | undefined, err: unknown, status = 500) => {
-        // SEC-11: 프로덕션에서 DB 내부 코드(code/hint/details) 미노출
-        // 개발 환경에서는 전체 에러를 그대로 표시 (디버깅 편의)
+        // TYP-11: lib/security.sanitizeErrorMessage 로 중앙화.
+        // 개발/프로덕션 분기·DB 코드 마스킹·Error vs object 처리를 단일 구현으로 통합.
         const isDev = process.env.NODE_ENV === 'development'
-        let message: string
-        if (err instanceof Error) {
-          message = err.message
-        } else if (err && typeof err === 'object') {
-          const e = err as { message?: string; code?: string; hint?: string; details?: string }
-          if (isDev) {
-            message = e.message ?? e.details ?? e.hint ?? JSON.stringify(err)
-            if (e.code) message = `[${e.code}] ${message}`
-          } else {
-            // 프로덕션: 사용자 메시지만, DB 코드/힌트 제외
-            message = e.message ?? '처리 중 오류가 발생했습니다.'
-          }
-        } else {
-          message = isDev ? String(err) : '처리 중 오류가 발생했습니다.'
-        }
+        let message = sanitizeErrorMessage(err, '처리 중 오류가 발생했습니다.')
         // 마이그레이션 미적용 힌트 (개발 전용)
         if (isDev && /user_intent|column.*does not exist|schema cache/i.test(message)) {
           message += ' — 마이그레이션 007/008 적용이 필요합니다. Supabase SQL Editor 에서 supabase/migrations/007_*.sql 과 008_*.sql 을 실행해주세요.'
@@ -142,6 +134,7 @@ export async function POST(request: NextRequest) {
           return controller.close()
         }
         const projectId = project.id as string
+        createdProjectId = projectId
         emit({ type: 'project', projectId })
 
         // ── Step 2: analyze ────────────────────────────────────────────────
@@ -280,6 +273,20 @@ export async function POST(request: NextRequest) {
         controller.close()
       } catch (err) {
         console.error(`[/api/generate/pipeline] stream error at step=${currentStep}`, err)
+
+        // BIZ-12 — 부분 실패 시 projects.status='failed' 로 업데이트.
+        // (성공 경로에서 status='done' 으로 업데이트하므로 catch 만 'failed' 처리.)
+        if (createdProjectId) {
+          try {
+            await supabase
+              .from('projects')
+              .update({ status: 'failed', updated_at: new Date().toISOString() })
+              .eq('id', createdProjectId)
+          } catch (updateErr) {
+            console.error('[/api/generate/pipeline] failed to mark project as failed:', updateErr)
+          }
+        }
+
         // v1.1 — Supabase 등 비-Error 객체도 안전하게 직렬화
         let message: string
         if (err instanceof Error) {

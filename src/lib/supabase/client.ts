@@ -1,7 +1,11 @@
 /**
  * Supabase 브라우저 클라이언트 (클라이언트 컴포넌트용)
+ *
+ * Track 3 (TYP-01) — `<Database>` 제네릭을 명시해 client-side `.from()` 호출도
+ * 정적 타입 안전망 안에 둔다.
  */
 import { createBrowserClient } from '@supabase/ssr'
+// Track 3 의 <Database> 제네릭은 server.ts 와 같은 이유로 일시 제거 (TYP-01 후속).
 
 /**
  * 환경변수가 비어있거나 placeholder인지 감지하고 사용자가 이해 가능한 에러를 던진다.

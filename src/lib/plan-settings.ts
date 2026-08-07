@@ -17,13 +17,26 @@ import type { Plan, Resolution } from '@/lib/plan-settings-shared'
 import { DEFAULT_PLAN_RESOLUTION } from '@/lib/plan-settings-shared'
 
 // 공유 타입/상수를 re-export (서버 코드가 한 파일에서 다 가져올 수 있도록)
-export type { Plan, Resolution }
+export type { Plan, Resolution, PaidPlan, TopupPack } from '@/lib/plan-settings-shared'
 export {
   DEFAULT_PLAN_RESOLUTION,
   RESOLUTION_LABELS,
   PLAN_LABELS,
+  PLAN_DISPLAY_NAMES,
   PLANS,
   RESOLUTIONS,
+  PLAN_PRICES,
+  TOPUP_PRICES,
+  PLAN_CREDITS,
+  TOPUP_CREDITS,
+  FREE_INITIAL_CREDITS,
+  SMS_DAILY_QUOTA,
+  KAKAO_DAILY_QUOTA,
+  formatKRW,
+  getPlanPriceLabel,
+  getTopupPriceLabel,
+  FREE_PLAN_COPY,
+  PRO_RESOLUTION_COPY,
 } from '@/lib/plan-settings-shared'
 
 /**

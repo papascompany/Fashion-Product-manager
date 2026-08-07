@@ -61,6 +61,34 @@ export async function createAiFittingSignedUrl(
 }
 
 /**
+ * 옵트인 hook — 호출 측이 (history / share / OG 이미지 등) ai-fittings 결과
+ * URL 을 서명 URL 로 점진 마이그레이션할 수 있도록 단일 진입점을 제공한다.
+ *
+ * 사용 패턴:
+ *   const url = await maybeSignedAiFittingUrl(publicUrl, { enabled: false })
+ *
+ *   - enabled=false (기본): publicUrl 을 그대로 반환 (현재 운영 모드).
+ *   - enabled=true : public URL 에서 path 를 추출해 서명 URL 발급, 실패 시
+ *     publicUrl 로 graceful fallback.
+ *
+ * Track 3 (TYP-04) — 본 함수는 dead module 마크를 벗기기 위해 추가됐다.
+ * 실제 wiring (history/share 라우트 호출) 은 트랙 4 책임.
+ */
+export async function maybeSignedAiFittingUrl(
+  publicUrl: string,
+  opts: { enabled?: boolean; expiresInSeconds?: number } = {}
+): Promise<string> {
+  const { enabled = false, expiresInSeconds = 3600 } = opts
+  if (!enabled || !publicUrl) return publicUrl
+
+  const path = toStoragePath(publicUrl)
+  if (!path) return publicUrl
+
+  const { signedUrl } = await createAiFittingSignedUrl(path, expiresInSeconds)
+  return signedUrl ?? publicUrl
+}
+
+/**
  * 기존 ai-fittings 공개 URL 에서 버킷 내부 객체 경로를 추출한다.
  * 공개→서명 URL 로 점진 마이그레이션할 때, 호출자가 저장돼 있던 public URL 을
  * 그대로 createAiFittingSignedUrl 에 넘길 수 있도록 돕는다.

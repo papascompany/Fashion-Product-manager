@@ -17,7 +17,18 @@ interface UserRow {
   email: string | null
 }
 
-async function loadUsers(params: SearchParams): Promise<UserRow[]> {
+/** TYP-09: auth.admin.listUsers perPage 상한 — 초과 시 silent 누락 안내 */
+const LIST_USERS_PER_PAGE = 200
+
+interface LoadUsersResult {
+  rows: UserRow[]
+  /** auth.users 총량이 LIST_USERS_PER_PAGE 를 초과해 검색 누락 가능 시 true */
+  reachedAuthCap: boolean
+  /** authUsers 응답 갯수 (참고용) */
+  authUsersCount: number
+}
+
+async function loadUsers(params: SearchParams): Promise<LoadUsersResult> {
   const admin = await createAdminClient()
   let query = admin
     .from('user_profiles')
@@ -29,11 +40,13 @@ async function loadUsers(params: SearchParams): Promise<UserRow[]> {
   if (!params.showBanned) query = query.is('banned_at', null)
 
   const { data: profiles } = await query
-  if (!profiles) return []
+  if (!profiles) return { rows: [], reachedAuthCap: false, authUsersCount: 0 }
 
   // auth.users 에서 email 조회 (admin 권한 필요)
   const ids = profiles.map((p) => p.id)
-  const { data: { users: authUsers } } = await admin.auth.admin.listUsers({ perPage: 200 })
+  const { data: { users: authUsers } } = await admin.auth.admin.listUsers({
+    perPage: LIST_USERS_PER_PAGE,
+  })
   const emailMap = new Map<string, string | null>()
   for (const u of authUsers ?? []) emailMap.set(u.id, u.email ?? null)
 
@@ -48,7 +61,12 @@ async function loadUsers(params: SearchParams): Promise<UserRow[]> {
       return (u.email?.toLowerCase().includes(q) ?? false) || u.id.includes(q)
     })
 
-  return rows.filter((r) => ids.includes(r.id))
+  const filtered = rows.filter((r) => ids.includes(r.id))
+  const authUsersCount = authUsers?.length ?? 0
+  // perPage 상한 도달 = 다음 페이지가 더 있어 검색 silent 누락 가능 (TYP-09).
+  const reachedAuthCap = authUsersCount >= LIST_USERS_PER_PAGE
+
+  return { rows: filtered, reachedAuthCap, authUsersCount }
 }
 
 export default async function AdminUsersPage({
@@ -57,7 +75,7 @@ export default async function AdminUsersPage({
   searchParams: Promise<SearchParams>
 }) {
   const params = await searchParams
-  const users = await loadUsers(params)
+  const { rows: users, reachedAuthCap, authUsersCount } = await loadUsers(params)
 
   return (
     <div className="p-6 md:p-8">
@@ -70,6 +88,18 @@ export default async function AdminUsersPage({
           이메일 검색 · 플랜 변경 · 크레딧 조정 · 계정 정지
         </p>
       </header>
+
+      {reachedAuthCap && (
+        <div
+          role="alert"
+          className="mb-4 p-3 text-[12px] text-[#7a4c00] bg-[#fff4d6] border border-[#e9c66a]"
+        >
+          <strong className="font-bold">검색 누락 주의:</strong> auth.users 응답이
+          상한({authUsersCount})에 도달했습니다. 200명 초과 시 이메일 검색이
+          silent 누락될 수 있습니다 — 서버측 페이지네이션 도입(TYP-09 후속) 전까지
+          ID 기반 직접 조회를 권장합니다.
+        </div>
+      )}
 
       <UsersTable initial={users} />
     </div>

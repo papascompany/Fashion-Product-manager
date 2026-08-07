@@ -1,7 +1,7 @@
 'use client'
 
-import { useState } from 'react'
-import { MessageSquare, Link2, Check, Share2, X, Loader2 } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { MessageSquare, Link2, Check, Share2, X, Loader2, AlertTriangle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -35,6 +35,10 @@ export function ShareSheet({
   const [copied, setCopied] = useState(false)
   const [sent, setSent] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // UX-06 — 카카오 SDK 미초기화 시 사용자에게 명시적 fallback 토스트
+  const [kakaoFallbackNote, setKakaoFallbackNote] = useState<string | null>(null)
+  // UX-04 — a11y: ESC + focus trap
+  const panelRef = useRef<HTMLDivElement>(null)
 
   const shareUrl = `${typeof window !== 'undefined' ? window.location.origin : ''}/share/${projectId}`
 
@@ -92,10 +96,64 @@ export function ShareSheet({
           { title: '상품 보러가기', link: { mobileWebUrl: shareUrl, webUrl: shareUrl } },
         ],
       })
+      setKakaoFallbackNote(null)
     } else {
+      // UX-06 — SDK 미초기화 시 명시적 안내 + 링크 복사 fallback
       handleCopyLink()
+      setKakaoFallbackNote('카카오 공유 준비 중입니다. 대신 링크를 복사했어요.')
     }
   }
+
+  // 카카오 fallback 메모는 5초 후 자동 dismiss
+  useEffect(() => {
+    if (!kakaoFallbackNote) return
+    const t = setTimeout(() => setKakaoFallbackNote(null), 5000)
+    return () => clearTimeout(t)
+  }, [kakaoFallbackNote])
+
+  // UX-04 — a11y: ESC 닫기 + focus trap + body scroll lock
+  useEffect(() => {
+    if (!open) return
+    const previouslyFocused = document.activeElement as HTMLElement | null
+    const first = panelRef.current?.querySelector<HTMLElement>(
+      'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+    )
+    first?.focus()
+
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.stopPropagation()
+        onClose()
+        return
+      }
+      if (e.key === 'Tab' && panelRef.current) {
+        const focusable = Array.from(
+          panelRef.current.querySelectorAll<HTMLElement>(
+            'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+          )
+        )
+        if (focusable.length === 0) return
+        const firstEl = focusable[0]
+        const lastEl = focusable[focusable.length - 1]
+        const active = document.activeElement as HTMLElement | null
+        if (e.shiftKey && active === firstEl) {
+          e.preventDefault()
+          lastEl.focus()
+        } else if (!e.shiftKey && active === lastEl) {
+          e.preventDefault()
+          firstEl.focus()
+        }
+      }
+    }
+    document.addEventListener('keydown', onKey)
+    const prevOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => {
+      document.removeEventListener('keydown', onKey)
+      document.body.style.overflow = prevOverflow
+      previouslyFocused?.focus?.()
+    }
+  }, [open, onClose])
 
   if (!open) return null
 
@@ -106,6 +164,10 @@ export function ShareSheet({
       onClick={onClose}
     >
       <div
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="share-sheet-title"
         className="relative w-full max-w-sm bg-white overflow-hidden"
         style={{ border: '1px solid #e5e5e5' }}
         onClick={(e) => e.stopPropagation()}
@@ -118,18 +180,32 @@ export function ShareSheet({
         {/* 헤더 */}
         <div className="flex items-center justify-between px-6 pt-5 pb-4" style={{ borderBottom: '1px solid #e5e5e5' }}>
           <div>
-            <h2 className="text-[18px] font-black text-[#111111]">공유하기</h2>
+            <h2 id="share-sheet-title" className="text-[18px] font-black text-[#111111]">공유하기</h2>
             <p className="text-[12px] text-[#9e9ea0] mt-0.5 truncate max-w-[220px]">
               {productName}
             </p>
           </div>
           <button
             onClick={onClose}
+            aria-label="공유 시트 닫기"
             className="w-8 h-8 rounded-full flex items-center justify-center hover:bg-[#f5f5f5] transition-colors"
           >
             <X className="w-4 h-4 text-[#707072]" strokeWidth={2.5} />
           </button>
         </div>
+
+        {/* UX-06 — 카카오 SDK 미초기화 fallback 토스트 */}
+        {kakaoFallbackNote && (
+          <div
+            className="px-6 py-2.5 flex items-start gap-2"
+            role="status"
+            aria-live="polite"
+            style={{ backgroundColor: '#fff9e6', borderBottom: '1px solid #f5c430' }}
+          >
+            <AlertTriangle className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" style={{ color: '#b45309' }} />
+            <p className="text-[12px] text-[#111111] flex-1">{kakaoFallbackNote}</p>
+          </div>
+        )}
 
         {/* 공유 버튼 그리드 */}
         {!activeMethod && (
