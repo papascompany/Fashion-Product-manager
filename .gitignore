@@ -49,3 +49,6 @@ next-env.d.ts
 # Environment variables
 .env.local
 .env.*.local
+
+# render-service (VPS 마이크로서비스) 로컬 설치물
+render-service/node_modules

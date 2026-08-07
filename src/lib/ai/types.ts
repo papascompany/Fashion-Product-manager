@@ -102,18 +102,96 @@ export type DescriptionOutput = z.infer<typeof DescriptionSchema>
  *
  * 출력: DetailSection[] 호환 형태. id 는 클라이언트에서 부여.
  */
+/** 섹션 이미지 슬롯 종류 — src/store/studio.ts ShotSlot 과 verbatim 일치 */
+export const ShotSlotSchema = z.enum(['productShot', 'fitShot', 'detailShot', 'lifestyle'])
+export type ShotSlot = z.infer<typeof ShotSlotSchema>
+
+/** 테마 식별자 — src/lib/detail-page/themes.ts ThemeId 와 verbatim 일치 */
+export const ThemeIdSchema = z.enum(['editorial-minimal', 'soft-luxury-serif', 'clean-conversion'])
+
 export const DetailPageSectionSchema = z.discriminatedUnion('type', [
-  z.object({ type: z.literal('hero'),        title: z.string(), tagline: z.string() }),
-  z.object({ type: z.literal('features'),    heading: z.string(), items: z.array(z.string()).min(2).max(8) }),
-  z.object({ type: z.literal('description'), content: z.string() }),
-  z.object({ type: z.literal('keywords'),    items: z.array(z.string()).min(3).max(12) }),
-  z.object({ type: z.literal('reviews'),     placeholder: z.string() }),
-  z.object({ type: z.literal('cta'),         label: z.string() }),
-  z.object({ type: z.literal('text'),        heading: z.string().optional(), content: z.string() }),
+  z.object({ type: z.literal('hero'),        title: z.string(), tagline: z.string(), shotSlot: ShotSlotSchema.optional() }),
+  z.object({ type: z.literal('features'),    heading: z.string(), items: z.array(z.string()).min(2).max(8), shotSlot: ShotSlotSchema.optional() }),
+  z.object({ type: z.literal('description'), content: z.string(), shotSlot: ShotSlotSchema.optional() }),
+  z.object({ type: z.literal('keywords'),    items: z.array(z.string()).min(3).max(12), shotSlot: ShotSlotSchema.optional() }),
+  z.object({ type: z.literal('reviews'),     placeholder: z.string(), shotSlot: ShotSlotSchema.optional() }),
+  z.object({ type: z.literal('cta'),         label: z.string(), shotSlot: ShotSlotSchema.optional() }),
+  z.object({ type: z.literal('text'),        heading: z.string().optional(), content: z.string(), shotSlot: ShotSlotSchema.optional() }),
+  // ─── 상세페이지 엔진 신규 유형 ─────────────────────────────────────────────
+  z.object({
+    type: z.literal('gallery'),
+    heading: z.string().optional(),
+    items: z.array(z.object({
+      url: z.string().optional(),
+      shotSlot: ShotSlotSchema,
+      caption: z.string().optional(),
+    })).min(1).max(8),
+  }),
+  z.object({
+    type: z.literal('feature-split'),
+    heading: z.string(),
+    body: z.string(),
+    shotSlot: ShotSlotSchema,
+    url: z.string().optional(),
+    reverse: z.boolean().optional(),
+  }),
+  z.object({
+    type: z.literal('material'),
+    heading: z.string().optional(),
+    cells: z.array(z.object({
+      kind: z.enum(['image', 'text']),
+      shotSlot: ShotSlotSchema.optional(),
+      url: z.string().optional(),
+      title: z.string().optional(),
+      text: z.string().optional(),
+      span: z.enum(['big', 'wide', 'normal']).optional(),
+    })).min(1).max(6),
+  }),
+  z.object({
+    type: z.literal('lookbook'),
+    heading: z.string().optional(),
+    looks: z.array(z.object({
+      shotSlot: ShotSlotSchema,
+      url: z.string().optional(),
+      caption: z.string().optional(),
+    })).min(1).max(8),
+  }),
+  z.object({
+    type: z.literal('size-spec'),
+    caption: z.string().optional(),
+    columns: z.array(z.string()).min(1).max(8),
+    rows: z.array(z.object({
+      label: z.string(),
+      values: z.array(z.string()),
+    })).min(1).max(20),
+    note: z.string().optional(),
+  }),
+  z.object({
+    type: z.literal('trust'),
+    rating: z.string().optional(),
+    quote: z.string().optional(),
+    quoteMeta: z.string().optional(),
+    badges: z.array(z.object({
+      title: z.string(),
+      desc: z.string().optional(),
+    })).min(1).max(6),
+  }),
+  z.object({ type: z.literal('benefit-banner'), text: z.string() }),
+  z.object({
+    type: z.literal('legal'),
+    fields: z.array(z.object({
+      label: z.string(),
+      value: z.string(),
+    })).min(1).max(20),
+    aiNotice: z.string().optional(),
+  }),
+  // 커머스 없는 에디토리얼 마감 (가격/구매버튼 없음)
+  z.object({ type: z.literal('closing'), heading: z.string(), subtext: z.string().optional() }),
 ])
 
 export const DetailPagePlanSchema = z.object({
-  sections: z.array(DetailPageSectionSchema).min(3).max(10)
+  themeId: ThemeIdSchema.optional().describe('상세페이지 테마 (기본 editorial-minimal)'),
+  sections: z.array(DetailPageSectionSchema).min(3).max(13)
     .describe('상품 상세페이지를 구성하는 섹션 배열. hero 가 반드시 첫 번째.'),
 })
 export type DetailPagePlan = z.infer<typeof DetailPagePlanSchema>

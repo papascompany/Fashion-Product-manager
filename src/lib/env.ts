@@ -59,6 +59,12 @@ export const COOLSMS_API_SECRET = () => requireEnv('COOLSMS_API_SECRET')
 /** CoolSMS 발신 번호 */
 export const COOLSMS_FROM_NUMBER = () => requireEnv('COOLSMS_FROM_NUMBER')
 
+/** 상세페이지 렌더 서비스 URL (VPS Playwright, 선택 — 미설정 시 클라이언트 폴백) */
+export const DETAIL_RENDER_URL = () => optionalEnv('DETAIL_RENDER_URL')
+
+/** 상세페이지 렌더 서비스 인증 토큰 (선택) */
+export const DETAIL_RENDER_TOKEN = () => optionalEnv('DETAIL_RENDER_TOKEN')
+
 // ─── 클라이언트/서버 공용 환경변수 ─────────────────────────────────────────
 
 /** Supabase 프로젝트 URL */

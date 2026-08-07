@@ -23,7 +23,33 @@ export interface AiFittingPromptParams {
   aspectRatio: AspectRatio
   /** 사용자 보정 지시 (선택) — "더 밝게", "카페 배경으로" 등 */
   refinement?: string
+  /** 상세페이지 컷 세트 — 착장 앵글 배리언트 (전/측/후/라이프스타일) */
+  shotVariant?: FittingShotVariant
+  /** 모델 프로필 락 — 컷 세트 전체에서 동일 모델·조명 유지 가드레일 강화 */
+  modelLock?: boolean
 }
+
+export type FittingShotVariant = 'front' | 'side' | 'back' | 'lifestyle'
+
+// ─── 컷 세트 앵글 배리언트 (상세페이지 lookbook 전/측/후) ───────────────────
+
+const SHOT_VARIANT_COMPOSITION: Record<FittingShotVariant, string> = {
+  front:
+    'Front-facing full-body editorial shot. The model faces the camera directly, relaxed natural stance, the garment silhouette fully readable from the front.',
+  side:
+    'Side-profile full-body shot. The model is turned 90 degrees showing the garment drape and side silhouette, gaze ahead, natural posture.',
+  back:
+    'Back-view full-body shot. The model faces away from the camera showing the back of the garment completely — back seams, hem, and fit clearly visible.',
+  lifestyle:
+    'Candid lifestyle moment in a warm lived-in premium space (cafe, street, home interior). The model wears the product naturally mid-motion; the environment stays softly blurred behind.',
+}
+
+/** 컷 세트 전체에서 모델·조명 아이덴티티를 고정하는 가드레일 (PRD §3 ④). */
+const MODEL_LOCK_GUARDRAIL =
+  'MODEL LOCK: This image belongs to a single product detail page set. ' +
+  'The model must remain IDENTICAL across the set — same face, same hairstyle, same skin tone, same body proportions, same height. ' +
+  'Keep lighting neutral and consistent (soft daylight, no dramatic color casts), avoid extreme camera angles (no worm/bird-eye), ' +
+  'and keep the garment color and texture identical to the reference under neutral white balance.'
 
 // ─── 비율별 구도 가이드 ─────────────────────────────────────────────────────
 
@@ -38,7 +64,11 @@ const COMPOSITION_BY_RATIO: Record<string, string> = {
 
 export function buildAiFittingPrompt(params: AiFittingPromptParams): string {
   const features = params.productKeyFeatures?.join(', ') ?? params.category
-  const composition = COMPOSITION_BY_RATIO[params.aspectRatio] ?? COMPOSITION_BY_RATIO['1:1']
+  // 샷 배리언트가 있으면 앵글 구도가 우선, 종횡비 구도는 보조로 병기
+  const ratioComposition = COMPOSITION_BY_RATIO[params.aspectRatio] ?? COMPOSITION_BY_RATIO['1:1']
+  const composition = params.shotVariant
+    ? `${SHOT_VARIANT_COMPOSITION[params.shotVariant]} ${ratioComposition}`
+    : ratioComposition
 
   const lines: string[] = []
 
@@ -73,6 +103,11 @@ export function buildAiFittingPrompt(params: AiFittingPromptParams): string {
     `Magazine-quality polish. ` +
     `SAFETY: No celebrity likeness. No identity manipulation. The person from image 2 is the only model — do not invent new faces.`
   )
+
+  // [6] 모델 프로필 락 — 컷 세트 일관성 (상세페이지 오케스트레이션 시)
+  if (params.modelLock) {
+    lines.push(`[6] ${MODEL_LOCK_GUARDRAIL}`)
+  }
 
   // 사용자 보정 지시 (있을 때만)
   if (params.refinement && params.refinement.trim()) {

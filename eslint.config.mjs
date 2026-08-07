@@ -12,6 +12,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // VPS 렌더 마이크로서비스 — Next 앱 번들 외부 (자체 package.json)
+    "render-service/**",
   ]),
 ]);
 

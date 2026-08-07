@@ -94,6 +94,7 @@ export class NanaBanana2Provider implements IImageGenProvider {
       count,
       resolution,
       thinking = 'minimal',
+      seed,
     } = params
 
     // Nano Banana 2 (Google 2026-02-26 출시) — 개발계획서 8-A.2절 명시 모델
@@ -122,7 +123,7 @@ export class NanaBanana2Provider implements IImageGenProvider {
 
     const results = await Promise.allSettled(
       tasks.map(({ ratio }) =>
-        this.generateSingle({ model, prompt, referenceImages: resolvedRefs, ratio, scale, thinking })
+        this.generateSingle({ model, prompt, referenceImages: resolvedRefs, ratio, scale, thinking, seed })
       )
     )
 
@@ -153,8 +154,9 @@ export class NanaBanana2Provider implements IImageGenProvider {
     ratio: AspectRatio
     scale: number
     thinking: string
+    seed?: number
   }): Promise<ImageGenResult['images'][number] | null> {
-    const { model, prompt, referenceImages, ratio, scale } = params
+    const { model, prompt, referenceImages, ratio, scale, seed } = params
     const baseDims = ASPECT_TO_PX[ratio] ?? { width: 1024, height: 1024 }
     const width = Math.round(baseDims.width * scale)
     const height = Math.round(baseDims.height * scale)
@@ -199,6 +201,8 @@ export class NanaBanana2Provider implements IImageGenProvider {
         contents: [{ role: 'user', parts }],
         generationConfig: {
           responseModalities: ['IMAGE', 'TEXT'],
+          // 컷 간 상품 일관성 lock seed (전달 시에만) — 모델이 무시해도 무해
+          ...(typeof seed === 'number' ? { seed } : {}),
         },
       })
       const timeoutPromise = new Promise<never>((_, reject) =>

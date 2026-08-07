@@ -1,0 +1,308 @@
+<meta charset="utf-8">
+<style>
+  /* ProductCraft AI — 상세페이지 목업 · 테마: 소프트 럭셔리 세리프 (W컨셉 지향)
+     명조 헤드라인 · 세이지 포인트 · 라운드 벤토 · 넉넉한 여백 · 페미닌 */
+  :root {
+    --desk:#E9E3DA; --desk-edge:#DAD2C6; --desk-ink:#4E473D;
+    --paper:#FBF8F4; --surface:#F0EAE1; --ink:#35302A; --muted:#9A9186;
+    --line:#E4DCD1; --sage:#9DA98C; --terra:#C08457; --cta:#35302A; --cta-tx:#FBF8F4;
+    --serifko: "AppleMyungjo", "Nanum Myeongjo", "Apple SD Gothic Neo", serif;
+    --serif: "Hoefler Text", "Iowan Old Style", Georgia, serif;
+    --sans: -apple-system, BlinkMacSystemFont, "Pretendard Variable", Pretendard, "Apple SD Gothic Neo", system-ui, sans-serif;
+    --canvas: 860px;
+  }
+  @media (prefers-color-scheme: dark){ :root{ --desk:#171410; --desk-edge:#26211a; --desk-ink:#9a9084; } }
+  :root[data-theme="dark"]{ --desk:#171410; --desk-edge:#26211a; --desk-ink:#9a9084; }
+  :root[data-theme="light"]{ --desk:#E9E3DA; --desk-edge:#DAD2C6; --desk-ink:#4E473D; }
+  * { box-sizing: border-box; }
+
+  .ws { background: radial-gradient(120% 60% at 50% -10%, var(--desk-edge), transparent 60%), var(--desk);
+    min-height:100vh; padding: clamp(20px,5vw,72px) 16px 0; font-family:var(--sans); color:var(--desk-ink); -webkit-font-smoothing:antialiased; }
+  .cap { max-width:var(--canvas); margin:0 auto 22px; display:flex; flex-wrap:wrap; align-items:baseline; justify-content:space-between; gap:8px 20px; font-size:12.5px; }
+  .cap b{ font-weight:650; } .cap .muted{ opacity:.62; }
+  .cap .tag{ font-size:10.5px; letter-spacing:.14em; text-transform:uppercase; padding:3px 9px; border:1px solid currentColor; border-radius:100px; opacity:.5; }
+
+  .dp{ width:var(--canvas); max-width:100%; margin:0 auto; background:var(--paper); color:var(--ink); font-family:var(--sans); line-height:1.8;
+    box-shadow:0 1px 0 var(--desk-edge), 0 40px 90px -50px rgba(30,22,15,.5); overflow:hidden; }
+  @media (max-width:900px){ .dp{ width:100%; } }
+  .dp *{ box-sizing:border-box; }
+
+  .sec{ padding:120px 56px; position:relative; }
+  .sec--surface{ background:var(--surface); }
+  .sec--tight{ padding:80px 56px; }
+  @media (max-width:620px){ .sec{ padding:72px 30px; } .sec--tight{ padding:56px 30px; } }
+
+  .eyebrow{ display:flex; align-items:center; gap:12px; font-size:12px; letter-spacing:.2em; text-transform:uppercase; color:var(--sage); font-weight:600; margin:0 0 24px; }
+  .eyebrow .no{ font-family:var(--serif); font-style:italic; font-size:15px; letter-spacing:0; color:var(--ink); opacity:.45; }
+  .eyebrow .rule{ flex:0 0 30px; height:1px; background:var(--sage); }
+
+  h2.title{ font-family:var(--serifko); font-weight:500; letter-spacing:-.01em; line-height:1.3; font-size:36px; margin:0 0 22px; text-wrap:balance; }
+  @media (max-width:620px){ h2.title{ font-size:28px; } }
+  .lede{ font-size:18px; line-height:1.9; color:#544d43; margin:0; max-width:44ch; }
+  .body{ font-size:16.5px; line-height:1.9; color:#5c554a; margin:0; max-width:56ch; }
+  .cap-t{ font-size:13px; color:var(--muted); }
+
+  .shot{ position:relative; border-radius:18px; overflow:hidden; background:#e6ddd0; isolation:isolate; }
+  .shot::before{ content:""; position:absolute; inset:0; z-index:2; opacity:.4; mix-blend-mode:overlay;
+    background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='140' height='140'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='2' stitchTiles='stitch'/><feColorMatrix type='saturate' values='0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>"); }
+  .shot__slot{ position:absolute; z-index:4; left:14px; top:14px; font-size:10px; letter-spacing:.12em; text-transform:uppercase; font-weight:600;
+    color:#fbf8f4; background:rgba(53,48,42,.42); backdrop-filter:blur(3px); padding:5px 10px; border-radius:100px; border:1px solid rgba(251,248,244,.28); }
+  .drape::after{ content:""; position:absolute; inset:0; z-index:1;
+    background:linear-gradient(115deg, transparent 34%, rgba(255,252,246,.22) 50%, transparent 64%), linear-gradient(250deg, transparent 46%, rgba(53,40,28,.14) 82%); }
+  .f-hero{ background:radial-gradient(80% 90% at 60% 22%, #d8cdba 0%, #b9ad98 40%, #8f8a79 78%, #6f6f61 100%); }
+  .f-life{ background:radial-gradient(72% 82% at 36% 28%, #ece3d3 0%, #cdbfa9 44%, #a99f8b 84%); }
+  .f-ghost{ background:linear-gradient(160deg,#f4efe6 0%,#e2d9c9 55%,#cabfab 100%); }
+  .f-sage{ background:radial-gradient(90% 90% at 30% 20%, #bcc3aa 0%, #9da98c 55%, #78805f 100%); }
+  .f-d1{ background:radial-gradient(120% 120% at 22% 14%, #b6a992 0%, #7d715c 62%, #524734 100%); }
+  .f-d2{ background:repeating-linear-gradient(120deg,#a89a80 0 8px,#b6a88e 8px 16px); }
+  .f-terra{ background:radial-gradient(90% 90% at 68% 28%, #e3c3a4 0%, #c08457 60%, #8a5c3a 100%); }
+
+  /* HERO (고정 px) */
+  .hero{ position:relative; }
+  .hero .shot{ position:relative; height:920px; border-radius:0; }
+  @media (max-width:620px){ .hero .shot{ height:560px; } }
+  .hero__scrim{ position:absolute; inset:0; z-index:3; background:linear-gradient(to top, rgba(53,40,28,.6) 0%, rgba(53,40,28,.08) 44%, transparent 66%); }
+  .hero__copy{ position:absolute; z-index:5; left:0; right:0; bottom:0; padding:64px; color:#fbf8f4; }
+  .hero .eyebrow{ color:rgba(251,248,244,.86); } .hero .eyebrow .no{ color:rgba(251,248,244,.6);} .hero .eyebrow .rule{ background:rgba(251,248,244,.7);}
+  .hero h1{ font-family:var(--serifko); font-weight:500; font-size:56px; line-height:1.28; color:#fdfbf7; margin:0 0 18px; letter-spacing:-.01em; text-wrap:balance; }
+  .hero__tag{ font-size:18px; line-height:1.8; color:rgba(251,248,244,.92); max-width:38ch; margin:0; }
+  @media (max-width:620px){ .hero h1{ font-size:38px; } .hero__copy{ padding:30px; } }
+
+  .bridge{ display:grid; grid-template-columns:repeat(3,1fr); gap:14px; }
+  .bridge > div{ background:var(--paper); border:1px solid var(--line); border-radius:16px; padding:28px 24px; }
+  .sec--surface .bridge > div{ background:#fbf8f4; }
+  .bridge .k{ font-family:var(--serif); font-style:italic; font-size:15px; color:var(--sage); }
+  .bridge .v{ font-family:var(--serifko); font-size:20px; margin-top:8px; color:var(--ink); }
+  .bridge .d{ font-size:13.5px; color:var(--muted); margin-top:8px; line-height:1.65; }
+  @media (max-width:620px){ .bridge{ grid-template-columns:1fr; } }
+
+  .split{ display:grid; grid-template-columns:1fr 1fr; gap:48px; align-items:center; }
+  .split.rev{ direction:rtl; } .split.rev>*{ direction:ltr; }
+  .split .shot{ aspect-ratio:4/5; }
+  @media (max-width:620px){ .split{ grid-template-columns:1fr; gap:28px; } }
+
+  .gallery{ display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+  .gallery .shot{ aspect-ratio:4/5; }
+  .gallery .shot:first-child{ grid-column:1/-1; aspect-ratio:16/10; }
+  @media (max-width:620px){ .gallery{ grid-template-columns:1fr; } }
+
+  .bento{ display:grid; grid-template-columns:repeat(4,1fr); grid-auto-rows:158px; gap:14px; }
+  .bento .cell{ position:relative; border-radius:18px; overflow:hidden; }
+  .bento .big{ grid-column:span 2; grid-row:span 2; }
+  .bento .wide{ grid-column:span 2; }
+  .bento .txt{ background:var(--paper); border:1px solid var(--line); padding:22px; display:flex; flex-direction:column; justify-content:space-between; }
+  .sec--surface .bento .txt{ background:#fbf8f4; }
+  .bento .txt h4{ font-family:var(--serifko); font-size:20px; font-weight:500; margin:0; }
+  .bento .txt p{ font-size:13px; color:var(--muted); margin:8px 0 0; line-height:1.6; }
+  .bento .txt .n{ font-size:11px; letter-spacing:.14em; text-transform:uppercase; color:var(--sage); }
+  @media (max-width:620px){ .bento{ grid-template-columns:1fr 1fr; grid-auto-rows:132px; } }
+
+  .look{ display:grid; grid-template-columns:repeat(3,1fr); gap:14px; }
+  .look .shot{ aspect-ratio:3/4; } .look figure{ margin:0; }
+  .look figcaption{ font-size:12.5px; color:var(--muted); margin-top:12px; }
+  @media (max-width:620px){ .look{ grid-template-columns:1fr; } }
+
+  .spectbl{ width:100%; border-collapse:collapse; font-size:14.5px; }
+  .spectbl caption{ text-align:left; font-size:12px; letter-spacing:.12em; text-transform:uppercase; color:var(--muted); padding-bottom:14px; }
+  .spectbl th,.spectbl td{ text-align:left; padding:14px 12px; border-bottom:1px solid var(--line); }
+  .spectbl th{ font-weight:600; width:88px; }
+  .spectbl td.num{ font-variant-numeric:tabular-nums; text-align:right; color:#5c554a; }
+  .spectbl thead th{ color:var(--muted); font-size:12px; letter-spacing:.06em; text-transform:uppercase; border-bottom:1.5px solid var(--sage); }
+  .spec-wrap{ overflow-x:auto; }
+
+  .trust{ display:grid; grid-template-columns:1.25fr 1fr; gap:44px; align-items:center; }
+  .stars{ color:var(--terra); letter-spacing:3px; font-size:15px; }
+  .quote{ font-family:var(--serifko); font-size:22px; line-height:1.65; color:var(--ink); margin:14px 0 10px; text-wrap:balance; }
+  .badges{ display:grid; gap:14px; }
+  .badges .b{ display:flex; gap:12px; align-items:flex-start; background:var(--paper); border:1px solid var(--line); border-radius:16px; padding:16px 18px; }
+  .sec--surface .badges .b{ background:#fbf8f4; }
+  .badges .ic{ width:36px; height:36px; border-radius:100px; flex:0 0 36px; background:var(--surface); display:grid; place-items:center; font-family:var(--serif); font-style:italic; color:var(--sage); }
+  .badges .bt{ font-size:14px; font-weight:600; } .badges .bd{ font-size:12.5px; color:var(--muted); margin-top:2px; }
+  @media (max-width:620px){ .trust{ grid-template-columns:1fr; gap:28px; } }
+
+  .cta{ background:var(--cta); color:var(--cta-tx); text-align:center; }
+  .cta .eyebrow{ justify-content:center; color:rgba(251,248,244,.66); } .cta .eyebrow .rule{ background:rgba(251,248,244,.5);} .cta .eyebrow .no{ color:rgba(251,248,244,.5);}
+  .cta h2{ font-family:var(--serifko); font-weight:500; font-size:38px; margin:0 0 12px; color:#fdfbf7; }
+  .cta .price{ font-size:15px; color:rgba(251,248,244,.72); margin:0 0 30px; }
+  .cta .price b{ font-size:30px; color:#fdfbf7; font-weight:700; font-variant-numeric:tabular-nums; }
+  .cta .price .was{ text-decoration:line-through; opacity:.5; margin-right:10px; font-size:16px; }
+  .cta__btn{ display:inline-flex; align-items:center; gap:12px; background:var(--sage); color:#2b3122; font-weight:700; font-size:16px; padding:18px 46px; border-radius:100px; }
+
+  .legal{ background:#f2ece2; color:#786f60; font-size:11.5px; line-height:1.9; padding:44px 56px; }
+  .legal h5{ font-size:11px; letter-spacing:.14em; text-transform:uppercase; color:#9a9186; margin:0 0 12px; font-weight:700; }
+  .legal dl{ display:grid; grid-template-columns:118px 1fr; gap:5px 14px; margin:0; }
+  .legal dt{ color:#9a9186; } .legal dd{ margin:0; }
+  .legal .ai{ margin-top:18px; padding-top:14px; border-top:1px solid var(--line); color:#9a9186; }
+  @media (max-width:620px){ .legal{ padding:32px 30px; } .legal dl{ grid-template-columns:92px 1fr; } }
+
+  .dsys{ max-width:var(--canvas); margin:30px auto 60px; color:var(--desk-ink); }
+  .dsys__h{ display:flex; align-items:baseline; gap:12px; font-size:12px; letter-spacing:.16em; text-transform:uppercase; opacity:.7; margin-bottom:16px; }
+  .dsys__h .rule{ flex:1; height:1px; background:currentColor; opacity:.25; }
+  .dsys__grid{ display:grid; grid-template-columns:repeat(4,1fr); gap:12px; }
+  .dcard{ background:color-mix(in srgb, var(--desk) 60%, #fff 40%); border:1px solid var(--desk-edge); border-radius:14px; padding:16px; }
+  @media (prefers-color-scheme:dark){ .dcard{ background:color-mix(in srgb, var(--desk) 70%, #000 30%); } }
+  .dcard h6{ margin:0 0 10px; font-size:11px; letter-spacing:.12em; text-transform:uppercase; opacity:.6; }
+  .sw{ width:26px; height:26px; border-radius:6px; border:1px solid rgba(0,0,0,.12); display:inline-block; margin-right:6px; }
+  .dcard ul{ margin:0; padding-left:15px; font-size:11.5px; line-height:1.7; opacity:.85; }
+  .dcard .big{ font-family:var(--serifko); font-size:30px; }
+  @media (max-width:720px){ .dsys__grid{ grid-template-columns:1fr 1fr; } }
+
+  .rv{ opacity:0; transform:translateY(14px); transition:opacity .7s ease, transform .7s ease; }
+  .rv.in{ opacity:1; transform:none; }
+  @media (prefers-reduced-motion:reduce){ .rv{ opacity:1; transform:none; transition:none; } }
+</style>
+
+<div class="ws">
+  <div class="cap">
+    <span><b>ProductCraft AI</b> <span class="muted">· 상세페이지 생성 엔진 목업</span></span>
+    <span class="muted">테마: 소프트 럭셔리 세리프 · 캔버스 860px · 샘플 상품</span>
+    <span class="tag">Mockup</span>
+  </div>
+
+  <div class="dp">
+    <section class="hero">
+      <div class="shot f-hero drape"><div class="hero__scrim"></div><span class="shot__slot">연출컷 · AI Fitting</span></div>
+      <div class="hero__copy">
+        <p class="eyebrow"><span class="no">01</span><span class="rule"></span>Atelier Nond · Outerwear</p>
+        <h1>겨울의 실루엣을<br>천천히 다시 쓰다</h1>
+        <p class="hero__tag">한 겹으로 완성되는 오버사이즈 싱글 코트. 울의 무게가 어깨에서 부드럽게 풀리며, 도시의 겨울을 한결 차분하게 만들어 줍니다.</p>
+      </div>
+    </section>
+
+    <section class="sec rv">
+      <p class="eyebrow"><span class="no">02</span><span class="rule"></span>공감 · 이런 겨울, 있으셨죠</p>
+      <div class="split">
+        <div>
+          <h2 class="title">두꺼워질수록<br>둔해지는 겨울이 아쉬웠다면</h2>
+          <p class="body">겹겹이 껴입을수록 실루엣은 무너지고 움직임은 무거워집니다. 이 코트는 한 장으로 그 고민을 덜어냅니다. 도톰한 울 블렌드가 보온을 책임지는 동안, 넉넉한 드롭 숄더가 어떤 이너 위에도 여유로운 라인을 그려 줍니다.</p>
+        </div>
+        <div class="shot f-life drape"><span class="shot__slot">연출컷 · 라이프스타일</span></div>
+      </div>
+    </section>
+
+    <section class="sec--tight sec sec--surface">
+      <p class="eyebrow"><span class="no">03</span><span class="rule"></span>이 코트를 요약하면</p>
+      <div class="bridge">
+        <div><div class="k">Fabric</div><div class="v">울 62% 블렌드</div><div class="d">묵직한 보온감과 차분한 표면 광택</div></div>
+        <div><div class="k">Fit</div><div class="v">오버사이즈 싱글</div><div class="d">드롭 숄더 · 이너에 관대한 여유</div></div>
+        <div><div class="k">Mood</div><div class="v">에디토리얼 뉴트럴</div><div class="d">오트 · 차콜 · 딥브라운 3색</div></div>
+      </div>
+    </section>
+
+    <section class="sec rv">
+      <p class="eyebrow"><span class="no">04</span><span class="rule"></span>디테일 · 다각도로 보기</p>
+      <div class="gallery">
+        <div class="shot f-ghost drape"><span class="shot__slot">상품컷 · 고스트 매너킨</span></div>
+        <div class="shot f-hero drape"><span class="shot__slot">상품컷 · 행거</span></div>
+        <div class="shot f-d1 drape"><span class="shot__slot">상품컷 · 플랫레이</span></div>
+      </div>
+    </section>
+
+    <section class="sec sec--surface rv">
+      <p class="eyebrow"><span class="no">05</span><span class="rule"></span>본문 · 어깨에서 시작되는 여유</p>
+      <div class="split rev">
+        <div class="shot f-d1 drape"><span class="shot__slot">설명컷 · 디테일 매크로</span></div>
+        <div>
+          <h2 class="title">드롭 숄더가<br>만드는 편안한 각도</h2>
+          <p class="body">어깨선을 팔 쪽으로 살짝 내려, 긴장 없이 떨어지는 라인을 완성했습니다. 두꺼운 니트를 안에 입어도 당김 없이 들어가고, 벗었을 때는 그 자체로 완결된 실루엣이 남습니다.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="sec rv">
+      <p class="eyebrow"><span class="no">06</span><span class="rule"></span>소재 · 손끝으로 확인하는 완성도</p>
+      <div class="bento">
+        <div class="big cell shot f-sage drape"><span class="shot__slot">설명컷 · 원단 질감</span></div>
+        <div class="cell txt"><div class="n">Weave</div><div><h4>촘촘한 멜란지 표면</h4><p>빛에 따라 결이 살아나는 울 블렌드</p></div></div>
+        <div class="cell shot f-d2 drape"><span class="shot__slot">설명컷 · 봉제</span></div>
+        <div class="wide cell txt"><div class="n">Finish</div><div><h4>깔끔하게 감춘 안단과 견고한 뿔단추</h4><p>안쪽까지 정돈된 마감이 오래 입을수록 드러납니다</p></div></div>
+      </div>
+    </section>
+
+    <section class="sec sec--surface rv">
+      <p class="eyebrow"><span class="no">07</span><span class="rule"></span>스타일링 · 이렇게 입어 보세요</p>
+      <h2 class="title">한 벌로 그리는 세 가지 겨울</h2>
+      <div class="look">
+        <figure><div class="shot f-hero drape"><span class="shot__slot">연출컷 · 전면</span></div><figcaption>니트 원피스 위에 — 미니멀 데일리</figcaption></figure>
+        <figure><div class="shot f-life drape"><span class="shot__slot">연출컷 · 측면</span></div><figcaption>와이드 슬랙스와 — 도시적인 출근길</figcaption></figure>
+        <figure><div class="shot f-terra drape"><span class="shot__slot">연출컷 · 후면</span></div><figcaption>데님과 스니커즈로 — 주말의 여유</figcaption></figure>
+      </div>
+    </section>
+
+    <section class="sec">
+      <p class="eyebrow"><span class="no">08</span><span class="rule"></span>사이즈 · 스펙</p>
+      <div class="split">
+        <div class="spec-wrap">
+          <table class="spectbl">
+            <caption>실측 (cm) · 단면 기준</caption>
+            <thead><tr><th>사이즈</th><td class="num">어깨</td><td class="num">가슴</td><td class="num">총장</td><td class="num">소매</td></tr></thead>
+            <tbody>
+              <tr><th>S / 1</th><td class="num">52.0</td><td class="num">58.0</td><td class="num">96.5</td><td class="num">60.0</td></tr>
+              <tr><th>M / 2</th><td class="num">54.5</td><td class="num">60.5</td><td class="num">98.0</td><td class="num">61.5</td></tr>
+              <tr><th>L / 3</th><td class="num">57.0</td><td class="num">63.0</td><td class="num">99.5</td><td class="num">63.0</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div>
+          <h2 class="title" style="font-size:24px">소재 &amp; 관리</h2>
+          <p class="body" style="font-size:15px">겉감 울 62% · 폴리에스터 34% · 나일론 4%. 안감 폴리에스터 100%. 드라이클리닝 권장, 보관 시 넉넉한 옷걸이에 걸어 어깨 라인을 지켜 주세요. 모델은 M 사이즈를 착용했습니다 (175cm).</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="sec sec--surface rv">
+      <p class="eyebrow"><span class="no">09</span><span class="rule"></span>신뢰 · 먼저 입어 본 이야기</p>
+      <div class="trust">
+        <div>
+          <div class="stars">★★★★★</div>
+          <p class="quote">“가볍게 걸쳤는데 어깨 라인이 예뻐서 겨울 내내 이것만 입게 돼요.”</p>
+          <p class="cap-t">서울 · 30대 · M 착용 · 실구매 리뷰 1,284건 · 평점 4.9</p>
+        </div>
+        <div class="badges">
+          <div class="b"><div class="ic">i</div><div><div class="bt">정품 · 국내 봉제</div><div class="bd">시험성적서 보유</div></div></div>
+          <div class="b"><div class="ic">↺</div><div><div class="bt">7일 무료 교환 · 반품</div><div class="bd">사이즈 걱정 없이</div></div></div>
+          <div class="b"><div class="ic">→</div><div><div class="bt">오늘 출발 · 무료배송</div><div class="bd">오후 2시 이전 주문 시</div></div></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="sec cta">
+      <p class="eyebrow"><span class="no">10</span><span class="rule"></span>결론 · 이 겨울의 마무리</p>
+      <h2>지금, 한 벌의 여유를</h2>
+      <p style="font-size:16px;line-height:1.8;color:rgba(251,248,244,.82);max-width:42ch;margin:0 auto">한 겹으로 완성되는 오버사이즈 싱글 코트. 매일의 겨울을 한결 차분하게 만들어 줍니다.</p>
+    </section>
+
+    <footer class="legal">
+      <h5>상품 정보 고시</h5>
+      <dl>
+        <dt>제품명</dt><dd>오버사이즈 울 블렌드 싱글 코트</dd>
+        <dt>제조/수입</dt><dd>ATELIER NOND (대한민국)</dd>
+        <dt>소재</dt><dd>겉감 울 62% · 폴리에스터 34% · 나일론 4% / 안감 폴리에스터 100%</dd>
+        <dt>원산지</dt><dd>대한민국</dd>
+        <dt>A/S</dt><dd>ATELIER NOND 고객센터 · 평일 10:00–17:00</dd>
+      </dl>
+      <p class="ai">본 상세페이지의 이미지는 ProductCraft AI로 생성·조립되었으며, 일부 컷은 AI 이미지 합성(SynthID 워터마크 포함)을 포함합니다.</p>
+    </footer>
+  </div>
+
+  <section class="dsys">
+    <div class="dsys__h">Design System — 소프트 럭셔리 세리프 <span class="rule"></span></div>
+    <div class="dsys__grid">
+      <div class="dcard"><h6>컬러 토큰</h6>
+        <div><span class="sw" style="background:#FBF8F4"></span><span class="sw" style="background:#F0EAE1"></span><span class="sw" style="background:#35302A"></span><span class="sw" style="background:#9DA98C"></span><span class="sw" style="background:#C08457"></span></div>
+        <ul style="margin-top:8px"><li>웜크림 · 세이지(포인트) · 테라코타(보조)</li><li>파스텔·어시 뉴트럴</li></ul></div>
+      <div class="dcard"><h6>타이포그래피</h6><div class="big">가나 Aa</div>
+        <ul style="margin-top:10px"><li>헤드라인 = 명조(Noto Serif KR)</li><li>본문 = Pretendard</li><li>부드러운 여성스러움</li></ul></div>
+      <div class="dcard"><h6>레이아웃</h6>
+        <ul><li>라운드 16–20px · 벤토 비대칭</li><li>넉넉한 여백(패딩 120)</li><li>W컨셉 룩북·스토리텔링</li></ul></div>
+      <div class="dcard"><h6>포지셔닝</h6>
+        <ul><li>페미닌·라이프스타일 셀러</li><li>주얼리·원피스·디자이너</li><li>W컨셉 심사 지향</li></ul></div>
+    </div>
+  </section>
+</div>
+<script>
+  (function(){var r=window.matchMedia&&matchMedia('(prefers-reduced-motion: reduce)').matches;var i=document.querySelectorAll('.rv');
+    if(r||!('IntersectionObserver'in window)){i.forEach(function(e){e.classList.add('in');});return;}
+    var o=new IntersectionObserver(function(es){es.forEach(function(e){if(e.isIntersecting){e.target.classList.add('in');o.unobserve(e.target);}});},{threshold:.12,rootMargin:'0px 0px -8% 0px'});
+    i.forEach(function(e){o.observe(e);});})();
+</script>

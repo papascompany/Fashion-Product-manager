@@ -20,6 +20,12 @@ export interface ImageGenParams {
   thinking?: ThinkingLevel
   /** 한글 배지 텍스트 (선택사항) */
   overlayText?: string
+  /**
+   * 컷 간 상품 일관성용 lock seed (0 ~ 2^31-1).
+   * 같은 상품의 모든 상세페이지 컷 요청에 동일 값 전달 → 스타일 드리프트 감소.
+   * (Gemini generationConfig.seed — 모델이 무시할 수 있는 best-effort 힌트)
+   */
+  seed?: number
 }
 
 export interface ImageGenResult {

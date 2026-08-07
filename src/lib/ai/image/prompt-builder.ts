@@ -22,6 +22,10 @@ export interface PromptLayers {
   composition: string
   /** [5] 텍스트 삽입 (한글 배지, 선택사항) */
   textOverlay?: string
+  /** [6] 컷 세트 일관성 지시 (상세페이지 컷 오케스트레이션, 선택) */
+  consistency?: string
+  /** 프리셋 고유 네거티브 — 전역 네거티브 뒤에 병합 (선택) */
+  extraNegative?: string
 }
 
 // ─── 종횡비별 기본 구도 사전 ─────────────────────────────────────────────────
@@ -51,6 +55,75 @@ const KOREAN_SHOPPING_MOOD_MAP: Record<string, string> = {
   natural:    'organic earthy tones, soft bokeh background, warm golden-hour glow, eco-conscious feel',
   feminine:   'pastel palette, delicate lighting, floral or textile textures, soft romantic mood',
   functional: 'clean technical product shot, neutral grey background, sharp details, utility-focused',
+}
+
+// ─── 상세페이지 샷 프리셋 (Phase 2 — 컷 오케스트레이션) ─────────────────────
+// 상품컷/설명컷의 촬영 방식 사전. scene/composition 을 프리셋이 소유하고
+// 종횡비 구도는 보조 힌트로 밀려난다. 한글은 절대 굽지 않으므로 텍스트 세이프 존 요구.
+
+export type ShotPreset =
+  | 'flat-lay'         // 플랫레이 — 위에서 내려찍은 정돈 컷
+  | 'hanger'           // 행거 — 옷걸이 연출
+  | 'ghost-mannequin'  // 고스트 마네킹 — 착용 형태 유지 누끼
+  | 'detail-macro'     // 디테일 매크로 — 소재 결·스티치·버튼 클로즈업
+  | 'hero-object'      // 히어로 오브제 — 풀블리드 무드 상품컷
+  | 'lifestyle'        // 라이프스타일 — 상황·배경 연출 (모델 없이)
+
+interface ShotPresetSpec {
+  scene: string
+  composition: string
+  /** 프리셋 고유 네거티브 (전역 네거티브에 추가) */
+  negative?: string
+}
+
+const SHOT_PRESET_SPECS: Record<ShotPreset, ShotPresetSpec> = {
+  'flat-lay': {
+    scene: 'top-down flat lay on a clean neutral surface (linen, paper, or light wood), garment neatly arranged and smoothed, minimal styling props kept to the edges',
+    composition: 'perfect 90-degree overhead angle, garment centered and fully in frame, generous even margins, soft diffused daylight with no harsh shadows',
+  },
+  hanger: {
+    scene: 'garment on a slim matte wooden or brass hanger against a clean plaster or seamless wall, natural window light from one side',
+    composition: 'straight-on eye-level framing, garment fully visible with drape and silhouette clearly readable, breathing room above the hanger hook',
+  },
+  'ghost-mannequin': {
+    scene: 'invisible ghost mannequin effect — the garment holds a natural worn 3D shape with no visible mannequin, model, or stand, on a pure seamless studio background',
+    composition: 'straight-on centered product photography, complete garment visible including inner collar and hem, crisp edges suitable for cut-out use',
+    negative: 'visible mannequin, visible body parts, floating distorted fabric',
+  },
+  'detail-macro': {
+    scene: 'extreme close-up macro of the fabric surface showing weave texture, stitching, seams, buttons, or hardware of the exact product',
+    composition: 'tight macro framing filling the frame with material detail, shallow depth of field, raking side light that reveals texture relief',
+    negative: 'full garment view, distant shot',
+  },
+  'hero-object': {
+    scene: 'editorial hero still of the product as a sculptural object — draped, folded, or suspended with intention, on a tonal premium backdrop with soft gradient light',
+    composition: 'dramatic but clean composition with the product occupying the central two-thirds, cinematic soft shadows, negative space preserved at top and bottom',
+  },
+  lifestyle: {
+    scene: 'the product placed naturally in a lived-in premium space (cafe table, bedroom chair, entryway bench) with warm ambient light and subtle contextual props, no people',
+    composition: 'natural documentary angle, product clearly the focal subject at rule-of-thirds, softly blurred environment behind',
+    negative: 'people, faces, hands, model',
+  },
+}
+
+/** 조립 HTML 이 한글 타이포를 오버레이하므로, 컷 상·하단에 텍스트 세이프 존을 요구. */
+const TEXT_SAFE_ZONE =
+  'keep the top 15% and bottom 20% of the frame visually quiet (no busy detail) as text-safe zones for typography overlay, and render absolutely no text, letters, or logos of any kind in the image'
+
+/**
+ * 컷 간 상품 아이덴티티 일관성 블록 (PRD §3).
+ * 마스터 레퍼런스(원본 상품 이미지) 조건화 + 히어로 컬러 화이트밸런스 앵커.
+ */
+export function buildConsistencyBlock(opts?: { heroColorNote?: string }): string {
+  const parts = [
+    'this image is part of a single product detail page set — every shot must depict the IDENTICAL product from the reference image',
+    'match the reference exactly: same color under neutral white balance, same fabric texture, same buttons/zippers/hardware, same stitching, same proportions and length',
+    'consistent neutral color grading across the set; do not shift hue, saturation, or garment tone',
+  ]
+  if (opts?.heroColorNote?.trim()) {
+    parts.push(`anchor white balance and garment color to: ${opts.heroColorNote.trim()}`)
+  }
+  return parts.join(', ')
 }
 
 // ─── 공공 네거티브 프롬프트 ──────────────────────────────────────────────────
@@ -134,8 +207,16 @@ export function buildImagePrompt(layers: PromptLayers): string {
     parts.push(`TEXT OVERLAY: ${layers.textOverlay.trim()}`)
   }
 
-  // 네거티브 프롬프트를 끝에 명시
-  parts.push(`NEGATIVE: ${GLOBAL_NEGATIVE_PROMPT}`)
+  // [6] Consistency — 상세페이지 컷 세트 일관성 (선택)
+  if (layers.consistency?.trim()) {
+    parts.push(`CONSISTENCY: ${layers.consistency.trim()}`)
+  }
+
+  // 네거티브 프롬프트를 끝에 명시 (프리셋 고유 네거티브 병합)
+  const negative = layers.extraNegative?.trim()
+    ? `${GLOBAL_NEGATIVE_PROMPT}, ${layers.extraNegative.trim()}`
+    : GLOBAL_NEGATIVE_PROMPT
+  parts.push(`NEGATIVE: ${negative}`)
 
   return parts.join('\n')
 }
@@ -158,6 +239,10 @@ export interface BuildLayersInput {
   overlayText?: string
   /** 한글 배지 스타일링 옵션 (위치·색·모양) — 생략 시 top-right / vivid red / rounded rectangle */
   overlayBadge?: BadgeOptions
+  /** 상세페이지 샷 프리셋 — 지정 시 scene/composition 을 프리셋이 소유 */
+  shotPreset?: ShotPreset
+  /** 컷 세트 일관성 블록 포함 여부 (상세페이지 컷 오케스트레이션) */
+  consistency?: { heroColorNote?: string }
 }
 
 /**
@@ -177,10 +262,13 @@ export function buildPromptLayers(input: BuildLayersInput): PromptLayers {
     .filter(Boolean)
     .join(' ')
 
-  // [2] Scene — 배경 설정
+  // 샷 프리셋 — 지정 시 scene/composition 을 프리셋이 소유하고 종횡비 구도는 힌트로 격하
+  const preset = input.shotPreset ? SHOT_PRESET_SPECS[input.shotPreset] : undefined
+
+  // [2] Scene — 프리셋 > 커스텀 > 자동
   const scene =
-    input.customScene?.trim() ||
-    buildAutoScene(input.style, input.mood)
+    preset?.scene ??
+    (input.customScene?.trim() || buildAutoScene(input.style, input.mood))
 
   // [3] Mood / Style — 한국 쇼핑몰 스타일
   const moodKey = normalizeMoodKey(input.mood)
@@ -188,16 +276,28 @@ export function buildPromptLayers(input: BuildLayersInput): PromptLayers {
     KOREAN_SHOPPING_MOOD_MAP[moodKey] ??
     `${input.mood} style, professional product photography, Korean e-commerce optimized`
 
-  // [4] Composition — 종횡비별 구도
-  const composition = ASPECT_RATIO_COMPOSITION[ratio]
+  // [4] Composition — 프리셋 구도 + 텍스트 세이프 존, 없으면 종횡비별 구도
+  const composition = preset
+    ? `${preset.composition}, ${ASPECT_RATIO_COMPOSITION[ratio]}, ${TEXT_SAFE_ZONE}`
+    : ASPECT_RATIO_COMPOSITION[ratio]
 
   // [5] TextOverlay — 한글 배지가 있으면 모델이 정확히 렌더링하도록 구체 지시로 변환
   //     단순 문자열이 전달되면 buildTextOverlay()로 스타일링(위치/색/폰트/모양) 주입
+  //     (프리셋 컷은 텍스트 금지 원칙이므로 배지와 동시 사용을 권장하지 않음)
   const textOverlay = input.overlayText?.trim()
     ? buildTextOverlay(input.overlayText.trim(), input.overlayBadge)
     : undefined
 
-  return { subjectAnchor, scene, moodStyle, composition, textOverlay }
+  // [6] Consistency — 상세페이지 컷 세트 일관성
+  const consistency = input.consistency
+    ? buildConsistencyBlock(input.consistency)
+    : undefined
+
+  return {
+    subjectAnchor, scene, moodStyle, composition, textOverlay,
+    consistency,
+    extraNegative: preset?.negative,
+  }
 }
 
 // ─── 내부 유틸 ────────────────────────────────────────────────────────────────
