@@ -15,7 +15,7 @@ import type { NextRequest } from 'next/server'
 import { z } from 'zod'
 import { createClient } from '@/lib/supabase/server'
 import { checkCreditGuard } from '@/lib/credit-guard'
-import { isSafeImageUrl, MAX_BASE64_LENGTH } from '@/lib/security'
+import { isSafeImageUrl, MAX_BASE64_LENGTH, extractSafeMimeType } from '@/lib/security'
 import { buildImagePrompt, buildPromptLayers } from '@/lib/ai/image/prompt-builder'
 import { NanaBanana2Provider } from '@/lib/ai/image/nano-banana2-provider'
 import { setImageProvider, getImageProvider } from '@/lib/ai/client'
@@ -79,6 +79,20 @@ const ThumbnailSchema = z.object({
     .optional(),
   /** 컷 간 상품 일관성 lock seed (같은 상품 컷 세트에 동일 값 전달) */
   lockSeed: z.number().int().min(0).max(2_147_483_647).optional(),
+  /**
+   * 마스터 레퍼런스 세트 — 원본(정면) 외 추가 조건화 이미지(디테일·컬러칩).
+   * 클라이언트가 원본에서 파생한 data URL. 각 항목은 안전한 https URL 또는
+   * 화이트리스트 MIME 의 base64 data URI 여야 한다. provider 가 총 5장으로 캡.
+   */
+  referenceImages: z
+    .array(
+      z.string().max(MAX_BASE64_LENGTH).refine(
+        (v) => isSafeImageUrl(v) || extractSafeMimeType(v) !== null,
+        { message: '허용되지 않는 레퍼런스 이미지입니다.' },
+      ),
+    )
+    .max(4)
+    .optional(),
   /** 한글 배지 텍스트 (예: '신상', '20% 할인') */
   overlayText: z.string().max(20).optional(),
   /** 한글 배지 스타일 옵션 (위치·색·모양) */
@@ -116,6 +130,7 @@ export async function POST(request: NextRequest) {
       aspectRatios, pinnedAspectRatios, count,
       overlayText, overlayBadge, refinement,
       shotPreset, lockSeed,
+      referenceImages: extraReferenceImages,
     } = parsed.data
 
     // v1.1 Phase 2 — 핀된 비율 제외 (남은 비율이 없으면 모든 비율 진행 — 안전 fallback)
@@ -171,8 +186,12 @@ export async function POST(request: NextRequest) {
       overlayText,
       overlayBadge,
       shotPreset,
-      // lock seed 가 있는 요청 = 상세페이지 컷 세트 → 일관성 블록 포함
-      consistency: typeof lockSeed === 'number' ? {} : undefined,
+      // lock seed 가 있는 요청 = 상세페이지 컷 세트 → 일관성 블록 포함.
+      // 추가 레퍼런스(마스터 세트)가 오면 프롬프트에 "다중 레퍼런스" 언어를 켠다.
+      consistency:
+        typeof lockSeed === 'number'
+          ? { hasReferenceSet: (extraReferenceImages?.length ?? 0) > 0 }
+          : undefined,
     })
     let prompt = buildImagePrompt(layers)
     // v1.1 Phase 2 — refinement 가 있으면 프롬프트 끝에 보정 지시 추가
@@ -181,12 +200,18 @@ export async function POST(request: NextRequest) {
     }
 
     // ─── 참조 이미지 준비 ─────────────────────────────────────────────────
+    // primary(원본=정면)를 맨 앞에, 이어서 마스터 레퍼런스 세트(디테일·컬러칩).
+    // provider 가 최대 5장으로 캡하므로 순서상 원본이 항상 우선 조건화된다.
     const referenceImages: string[] = []
     if (imageBase64) referenceImages.push(imageBase64)
     else if (imageUrl) referenceImages.push(imageUrl)
 
     if (referenceImages.length === 0) {
       return NextResponse.json({ error: '참조 이미지가 필요합니다.' }, { status: 400 })
+    }
+
+    if (extraReferenceImages && extraReferenceImages.length > 0) {
+      referenceImages.push(...extraReferenceImages)
     }
 
     // ─── 썸네일 생성 ─────────────────────────────────────────────────────
