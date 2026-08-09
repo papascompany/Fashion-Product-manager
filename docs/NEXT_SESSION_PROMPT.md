@@ -1,6 +1,11 @@
-# 다음 세션 시작 프롬프트 (2026-08-08 갱신 · 두 브랜치 main 머지 + prod 배포 완료 시점)
+# 다음 세션 시작 프롬프트 (2026-08-08 갱신 · 마스터 레퍼런스 세트 작업 중단 시점)
 
 > 새 세션 첫 메시지로 "docs/NEXT_SESSION_PROMPT.md 읽고 이어서 진행" 이라고 지시하세요.
+
+> 🔵 **지금 진행 중인 작업 — 여기서부터 이어갈 것 (§6 참조)**
+> 브랜치 **`feat/master-reference-set` = `9761b1a`** (main 미머지, **preview 빌드 READY 확인됨**).
+> 마스터 레퍼런스 세트 자동 파생 구현 완료 + 파생 알고리즘 로직 단위검증 통과.
+> **남은 것: 런타임 스모크 1회 → main 머지.** 상세 절차는 이 문서 §6.
 
 > ✅ **P0 해소 (2026-08-01)**: Supabase(`jspajtwnxnuvutekbhii`) 오너가 복구 완료 — DNS·Auth·DB·Storage 정상, 데이터 보존 확인(기존 사용자/썸네일 존재). 재발 방지: 무료 티어면 7일 비활성 시 다시 pause 될 수 있음 — 유료 전환 또는 주기적 keep-alive 검토(오너).
 >
@@ -32,10 +37,10 @@
 - fashion-curation 톤 단일진실 2곳: `.claude/skills/fashion-curation-copy/SKILL.md` + `src/lib/prompts/fashion-curation-style.ts`.
 - 커밋 트레일러: 현재 활성 모델 기준(최근: `Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>`). 커밋/푸시는 요청 시에만(단, preview 빌드 검증 목적 push 는 이 문서가 정의한 절차로 허용).
 
-## 2. 브랜치 — 두 갈래 모두 main 에 머지 완료 (2026-08-08)
-- **`main` = `51693a9`** — **감사 브랜치 + 상세페이지 엔진 전부 반영, prod 배포 완료.** 이제 main 이 유일한 정본이며 두 feature 브랜치는 역할을 다했다(삭제 가능).
-- `audit-immediate-thisweek` (머지됨 `884dba4`) — 감사 86건 + 결제/RLS + 013 가드 수정(018·019).
-- `feat/detail-page-engine` (머지됨 `51693a9`) — 상세페이지 엔진 Phase 1+2.
+## 2. 브랜치 현황
+- **`main` = `a9fff49`** — 감사 브랜치 + 상세페이지 엔진 Phase 1+2 전부 반영, **prod 배포 완료**. 정본.
+- **`feat/master-reference-set` = `9761b1a`** ← **현재 작업 브랜치 (main 미머지)**. preview READY. 상세 §6.
+- (삭제 완료) `audit-immediate-thisweek`·`feat/detail-page-engine` — main 에 머지 후 로컬·원격 삭제. 복구 필요 시 `git branch <name> e14a958` / `432628a`.
 
 **적용된 마이그레이션 (prod DB)**: 001~012(기존) + **013·014·015·016** + **017**(generations detail_page) + **018·019**(가드 수정). 다음 신규 마이그레이션은 **020부터**.
 
@@ -89,6 +94,7 @@
 4. 정리: storage 객체 → thumbnails → generations → usage_events → ai_fittings → projects → auth 사용자 순으로 삭제.
 
 ## 4. 예정 내역 (우선순위 순)
+0. 🔵 **진행 중 작업 마무리** — 마스터 레퍼런스 세트 런타임 스모크 → main 머지 (**§6**).
 1. **잔여 런타임 검증 1건** — **AI Fitting 실생성 1회**(모델 사진 필요 — 오너가 앱에서 1회 업로드하면 `shotVariant`·모델락·컷 세트 일관성까지 확인 가능). 패널 UI 클릭-스루는 2026-08-08 완료(§3 참조).
 2. ⚠️ **결제 오픈 전 필수** — `TOSS_SECRET_KEY`/`TOSS_CLIENT_KEY` 가 **모든 Vercel 환경에 미설정**이라 Toss webhook 핸들러는 현재 fail-closed(요청 거부)이며 스모크 불가. 015 RPC 레벨(멱등성·금액·취소)은 검증 완료. 결제 오픈 시 secret 설정 → 핸들러 스모크 필수.
 3. **오너 결정 3건** — ① 크레딧 번들 단가(**동적 단가 반영 후 9컷 ≈ 9~13크레딧** — 재산정 필요) ② 세리프 라이선스(OFL Fraunces/Noto Serif KR vs 상용; 현재 system fallback) ③ 쿠팡 대표컷(1000×1000) 파이프·설명컷 기본값·테마 출시 우선순위·AI 고지 법무.
@@ -110,4 +116,44 @@
 - 보안 가드는 **양방향 쌍으로** 검증한다 — "막아야 할 것이 막히는가" + "통과해야 할 것이 통과하는가"(WHK-01: 가드가 정당한 크레딧 차감까지 되돌리면 전 서비스 무료화).
 - 긴 SQL 을 콘솔에 붙여넣을 때는 **끝에 상태 확인 SELECT** 를 둔다. 붙여넣기 잘림을 "결과 표 유무"로 즉시 판별할 수 있다(이번에 150줄에서 잘린 사고를 이 방식으로 잡음).
 
-마지막 커밋: `0394da8 fix(detail-page): generations 저장 유실 수정` (feat/detail-page-engine, preview READY, E2E 스모크 통과). Phase 2 본 커밋: `7153625`.
+---
+
+## 6. 🔵 진행 중 — 마스터 레퍼런스 세트 자동 파생 (Phase 2 심화)
+
+**브랜치 `feat/master-reference-set` = `9761b1a`** (main 미머지). **preview 빌드 READY 확인됨**(38s, `productcraft-pwxox9vha`).
+
+### 무엇을 만들었나 (PRD §3 ① — 컷 간 상품 아이덴티티 일관성)
+원본 상품 이미지 1장에서 **"정면 + 디테일 + 컬러칩" 레퍼런스 세트**를 파생해, 상품 컷(thumbnail 엔진) 요청마다 **다중 레퍼런스로 동봉**한다. 모델이 상품을 한 각도가 아니라 여러 정규화된 뷰로 인식해 색·질감·형태 드리프트가 줄어든다.
+
+**핵심 설계 판단 (되돌리기 전에 이유를 읽을 것)**
+- **파생은 클라이언트 canvas** — 별도 Gemini 호출로 뷰를 생성하지 않는다. 따라서 **크레딧 영향 0**, 파생물이 원본에서 결정론적으로 나와 그 자체의 드리프트가 없다.
+- **정면 = 원본 그 자체** — 이미 primary 로 전송되므로 따로 파생하지 않는다. 서버가 `[정면, 디테일, 컬러칩]` 순으로 provider 에 조건화(provider 5장 캡 이내).
+- **실패 시 무조건 폴백** — CORS 타인트·디코드 실패 등 어떤 단계든 실패하면 `null` 반환 → 기존 단일 레퍼런스 동작. **회귀 없음**이 설계 전제다.
+- **AI Fitting 은 의도적으로 제외** — 그 프롬프트는 `[제품=image 1, 모델=image 2]` 순서를 본문에서 명시 참조하므로, 레퍼런스를 끼우면 인덱스가 어긋난다. 확장하려면 `buildAiFittingPrompt` 의 image 번호 참조를 먼저 바꿔야 한다.
+
+### 변경 파일 (커밋 `9761b1a`, 5개)
+- `src/lib/detail-page/master-reference.ts`(신규) — `deriveReferenceAnchors(source)`: 중앙 55% 크롭(768px) + 지배색 컬러칩(512px, 32단계 양자화·배경색 후순위). 전부 try/catch, 실패 시 null.
+- `src/store/studio.ts` — `referenceAnchors` 캐시(프로젝트당 1회) + `setReferenceAnchors`. **`setImage` 에서 무효화**(새 원본 → 재파생).
+- `src/components/detail-page-editor/shot-panel.tsx` — 첫 생성 시 1회 파생·캐시, `runJob(job, lockSeed, anchors)` 로 전달, thumbnail 요청 body 에 `referenceImages: [detail, colorChip]`. 서브타이틀에 "상품 레퍼런스 세트 자동 동봉" 표시.
+- `src/app/api/generate/thumbnail/route.ts` — `referenceImages` 수용(최대 4, `isSafeImageUrl` 또는 화이트리스트 MIME base64 가드) → `[primary, ...extra]` 로 provider 전달. 세트가 있으면 `consistency: { hasReferenceSet: true }`.
+- `src/lib/ai/image/prompt-builder.ts` — `buildConsistencyBlock({ hasReferenceSet })`: 다중 레퍼런스를 "동일 상품의 다른 크롭"으로 취급하고 **컬러칩을 화이트밸런스 ground-truth** 로 지시.
+
+### 검증 상태
+- ✅ **preview 빌드 READY** (타입·번들 통과)
+- ✅ **파생 알고리즘 로직 단위검증** — 크롭 좌표가 항상 원본 내부 중앙, 32단계 양자화 무충돌, 배경 판정이 채도색 보존. (Node 로 순수 로직만 재현해 확인. canvas 자체는 미실행)
+- ❌ **런타임 스모크 미실행** ← **여기서 이어갈 것**
+
+### 다음 세션이 할 일 (순서대로)
+1. **런타임 스모크** — §3 "스모크 계정 만드는 법"으로 계정·프로젝트·섹션 시드 → preview 에서 컷 생성 1회.
+   - 확인 A: 응답 `prompt` 에 다중 레퍼런스 문구(`MULTIPLE reference views`, `color-swatch`)가 포함되는가.
+   - 확인 B: 크레딧이 컷당 1씩만 차감되는가(파생은 무과금이므로 **증가하면 안 됨**).
+   - 확인 C: 브라우저 UI 에서 실제로 파생이 되는가 — Supabase Storage 의 https 원본은 CORS 허용이라 canvas 파생이 성공해야 정상. **실패해 폴백되면 단일 레퍼런스로 동작**하므로 A 문구가 안 나온다. 그 경우 폴백은 정상 동작이지만 기능 효과가 없으니 원인(CORS 헤더) 확인 필요.
+2. 통과 시 **main 머지 → prod 배포 READY 확인 → 브랜치 삭제**.
+3. 실패 시: 폴백이 동작하므로 서비스 영향은 없다. 원인만 기록하고 머지 보류.
+
+### 검증 방법 참고
+API 레벨은 §3 "E2E 재실행 레시피", UI 레벨은 같은 절의 쿠키 주입 방식(브라우저 `document.cookie` 에 `sb-<ref>-auth-token` 주입). ⚠️ in-app 브라우저는 **0×0 뷰포트**라 픽셀 클릭 불가 — DOM `click()` 으로 대체했던 전례가 있다.
+
+---
+
+마지막 커밋: `9761b1a feat(detail-page): 마스터 레퍼런스 세트 자동 파생` (feat/master-reference-set, preview READY, 런타임 스모크 대기). main 최신: `a9fff49`.
