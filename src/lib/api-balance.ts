@@ -51,7 +51,7 @@ export interface ProviderFailureContext {
 
 // ─── 내부 유틸 ───────────────────────────────────────────────────────────────
 
-function errMessage(err: unknown): string {
+function errMessageOne(err: unknown): string {
   if (err instanceof Error) return err.message
   if (typeof err === 'string') return err
   if (err && typeof err === 'object') {
@@ -59,6 +59,37 @@ function errMessage(err: unknown): string {
     return e.message ?? e.details ?? e.hint ?? JSON.stringify(err)
   }
   return String(err)
+}
+
+/**
+ * 에러와 그 `cause` 체인을 하나의 진단 문자열로 펼친다.
+ *
+ * 래핑된 에러의 최상위 message 만 보면 원인이 가려진다 — 실제로
+ * NanaBanana2Provider 가 전부 실패를 고정 문구로 감싸는 바람에 thumbnail 라우트의
+ * 결제/쿼터 분류(BILLING_REQUIRED)가 발화하지 못했다. 분류는 이 함수의 결과로 해야 한다.
+ *
+ * ⚠️ 반환값에는 업스트림(Google 등) 원문이 포함되므로 **서버 로그·분류 전용**이다.
+ * 클라이언트 응답 본문에 그대로 싣지 말 것.
+ */
+export function flattenErrorChain(err: unknown, maxDepth = 5): string {
+  const parts: string[] = []
+  let current: unknown = err
+  const seen = new Set<unknown>()
+
+  for (let depth = 0; depth < maxDepth && current !== undefined && current !== null; depth++) {
+    if (typeof current === 'object') {
+      if (seen.has(current)) break // 순환 cause 방어
+      seen.add(current)
+    }
+    parts.push(errMessageOne(current))
+    current = current instanceof Error ? (current as Error).cause : undefined
+  }
+
+  return parts.join(' | ')
+}
+
+function errMessage(err: unknown): string {
+  return flattenErrorChain(err)
 }
 
 function errStatusCode(err: unknown): number | undefined {
