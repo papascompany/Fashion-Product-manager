@@ -140,10 +140,13 @@ export class NanaBanana2Provider implements IImageGenProvider {
       // 예전에는 generateSingle 이 예외를 삼키고 null 을 반환해 상위 라우트의
       // 결제/쿼터 분류(BILLING_REQUIRED)가 절대 발화하지 못했다.
       // cause 는 서버 로그·분류용이며 클라이언트로 그대로 내보내지 않는다.
-      const firstRejection = results.find((r) => r.status === 'rejected')
-      const cause = firstRejection ? (firstRejection as PromiseRejectedResult).reason : undefined
-      throw new Error('이미지 생성에 실패했습니다. 모든 요청이 거부되었습니다.',
-        cause !== undefined ? { cause } : undefined)
+      const firstRejection = results.find(
+        (r): r is PromiseRejectedResult => r.status === 'rejected'
+      )
+      throw new Error(
+        '이미지 생성에 실패했습니다. 모든 요청이 거부되었습니다.',
+        firstRejection ? { cause: firstRejection.reason } : undefined
+      )
     }
 
     return {
