@@ -1,11 +1,22 @@
-# 다음 세션 시작 프롬프트 (2026-08-08 갱신 · 마스터 레퍼런스 세트 작업 중단 시점)
+# 다음 세션 시작 프롬프트 (2026-08-28 갱신 · 마스터 레퍼런스 세트 스모크 시점)
 
 > 새 세션 첫 메시지로 "docs/NEXT_SESSION_PROMPT.md 읽고 이어서 진행" 이라고 지시하세요.
 
-> 🔵 **지금 진행 중인 작업 — 여기서부터 이어갈 것 (§6 참조)**
-> 브랜치 **`feat/master-reference-set` = `9761b1a`** (main 미머지, **preview 빌드 READY 확인됨**).
-> 마스터 레퍼런스 세트 자동 파생 구현 완료 + 파생 알고리즘 로직 단위검증 통과.
-> **남은 것: 런타임 스모크 1회 → main 머지.** 상세 절차는 이 문서 §6.
+> 🔴 **P0 — 이미지 생성 전면 불능 (2026-08-28 발견, 오너 조치 필요)**
+> **prod·preview 양쪽 모두** Gemini 이미지 모델(`gemini-3.1-flash-image-preview`)이
+> **429 RESOURCE_EXHAUSTED / free tier limit: 0** 으로 100% 실패한다.
+> → 썸네일·AI Fitting·컷 오케스트레이션 **모든 이미지 기능이 실사용자에게도 죽어 있다.**
+> - prod 와 preview 는 **서로 다른 API 키**를 쓰는데(Vercel env: Production=Sensitive, Preview/Development=별도 값) **둘 다** 동일 증상.
+> - 텍스트 모델(`gemini-2.5-flash`)은 preview 키로 200 정상 → 키 자체는 유효, **이미지 모델에 유료 쿼터가 없는 상태**(GCP 결제 비활성 또는 프로젝트 free tier).
+> - 최근 성공 이력: 2026-08-08 스모크. 그 이후 어느 시점에 끊겼다(픽스처 삭제로 DB 로는 시점 특정 불가).
+> - **오너 조치**: Google AI Studio / GCP 결제에서 두 키의 프로젝트 결제 상태 확인 → 이미지 모델 유료 쿼터 복구.
+> - 부수 문제(코드): provider 가 원본 429 메시지를 `"이미지 생성에 실패했습니다. 모든 요청이 거부되었습니다."` 로 덮어써서
+>   thumbnail 라우트의 `BILLING_REQUIRED`(503) 분기가 **절대 발화하지 않는다** → 사용자에게 일반 500 만 보임. 결제성 오류는 그대로 전파하도록 고칠 것.
+
+> 🔵 **진행 중인 작업 — 여기서부터 이어갈 것 (§6 참조)**
+> 브랜치 **`feat/master-reference-set` = `81c6841`** (main 미머지, **preview 빌드 READY**).
+> 2026-08-28 런타임 스모크 실행 — **확인 C 통과, 확인 A 는 서버 경로까지 실행 확인(응답 문자열만 미관측), 확인 B 는 위 P0 로 미관측.**
+> **머지 보류 중.** 재개 조건과 남은 근거는 §6.
 
 > ✅ **P0 해소 (2026-08-01)**: Supabase(`jspajtwnxnuvutekbhii`) 오너가 복구 완료 — DNS·Auth·DB·Storage 정상, 데이터 보존 확인(기존 사용자/썸네일 존재). 재발 방지: 무료 티어면 7일 비활성 시 다시 pause 될 수 있음 — 유료 전환 또는 주기적 keep-alive 검토(오너).
 >
@@ -39,7 +50,7 @@
 
 ## 2. 브랜치 현황
 - **`main` = `a9fff49`** — 감사 브랜치 + 상세페이지 엔진 Phase 1+2 전부 반영, **prod 배포 완료**. 정본.
-- **`feat/master-reference-set` = `9761b1a`** ← **현재 작업 브랜치 (main 미머지)**. preview READY. 상세 §6.
+- **`feat/master-reference-set` = `81c6841`** ← **현재 작업 브랜치 (main 미머지)**. preview READY + 2026-08-28 스모크 부분 통과(확인 C 통과 / A·B 는 P0 로 미관측). 상세 §6.
 - (삭제 완료) `audit-immediate-thisweek`·`feat/detail-page-engine` — main 에 머지 후 로컬·원격 삭제. 복구 필요 시 `git branch <name> e14a958` / `432628a`.
 
 **적용된 마이그레이션 (prod DB)**: 001~012(기존) + **013·014·015·016** + **017**(generations detail_page) + **018·019**(가드 수정). 다음 신규 마이그레이션은 **020부터**.
@@ -94,7 +105,8 @@
 4. 정리: storage 객체 → thumbnails → generations → usage_events → ai_fittings → projects → auth 사용자 순으로 삭제.
 
 ## 4. 예정 내역 (우선순위 순)
-0. 🔵 **진행 중 작업 마무리** — 마스터 레퍼런스 세트 런타임 스모크 → main 머지 (**§6**).
+0. 🔴 **P0 — Gemini 이미지 쿼터 복구 (오너)**. prod 포함 모든 이미지 생성이 429 로 죽어 있다. 상단 배너 참조.
+0b. 🔵 **진행 중 작업 마무리** — 마스터 레퍼런스 세트 잔여 스모크(확인 A·B) → main 머지 (**§6**). P0 해소가 선행 조건.
 1. **잔여 런타임 검증 1건** — **AI Fitting 실생성 1회**(모델 사진 필요 — 오너가 앱에서 1회 업로드하면 `shotVariant`·모델락·컷 세트 일관성까지 확인 가능). 패널 UI 클릭-스루는 2026-08-08 완료(§3 참조).
 2. ⚠️ **결제 오픈 전 필수** — `TOSS_SECRET_KEY`/`TOSS_CLIENT_KEY` 가 **모든 Vercel 환경에 미설정**이라 Toss webhook 핸들러는 현재 fail-closed(요청 거부)이며 스모크 불가. 015 RPC 레벨(멱등성·금액·취소)은 검증 완료. 결제 오픈 시 secret 설정 → 핸들러 스모크 필수.
 3. **오너 결정 3건** — ① 크레딧 번들 단가(**동적 단가 반영 후 9컷 ≈ 9~13크레딧** — 재산정 필요) ② 세리프 라이선스(OFL Fraunces/Noto Serif KR vs 상용; 현재 system fallback) ③ 쿠팡 대표컷(1000×1000) 파이프·설명컷 기본값·테마 출시 우선순위·AI 고지 법무.
@@ -114,6 +126,9 @@
 - "빌드 READY" ≠ 런타임 정상 — 백엔드 의존 기능은 반드시 런타임 스모크까지. (P0 를 놓친 원인)
 - **"마이그레이션이 적용됐는가"가 아니라 "가드가 실제로 막는가"를 공격해봐야 한다.** 013 은 적용된 뒤에도 가드가 no-op 이었다(`security definer` → `current_user` 가 항상 소유자). 보안 수정은 반드시 **공격 시나리오 재현**으로 검증할 것.
 - 보안 가드는 **양방향 쌍으로** 검증한다 — "막아야 할 것이 막히는가" + "통과해야 할 것이 통과하는가"(WHK-01: 가드가 정당한 크레딧 차감까지 되돌리면 전 서비스 무료화).
+- **스모크 시드 payload 는 실제 타입과 정확히 맞춘다.** `generations.naming.payload.names` 를 `{name, reason}` 로 넣었더니(정타는 `ProductName={name, trend}`) 편집기 복원 중 `TypeError: Cannot read properties of undefined (reading 'length')` 로 **페이지 전체가 죽었다**. 섹션도 마찬가지 — `DetailSection` 유니온에 없는 `type:'story'`, `hero` 의 `headline/sub`(정타는 `title/tagline`), `closing` 의 `message`(정타는 `heading`)는 전부 무효. 정타는 `src/store/studio.ts` 상단 유니온 참조.
+  (부수 관찰: 잘못된 payload 에 대해 스튜디오 복원이 graceful 하지 않고 크래시한다 — 앱이 쓰는 payload 라 실사용 위험은 낮지만 방어 여지 있음.)
+- **preview 와 production 은 env 값이 다를 수 있다.** `GOOGLE_GENERATIVE_AI_API_KEY` 는 Production(Sensitive)·Preview·Development 가 각각 별도 값이다. `vercel env pull --environment=production` 은 Sensitive 값을 **자리표시자(11자)로 내려준다** — 그걸 실키로 착각하지 말 것(로컬 프로브가 "API key not valid" 를 뱉는 이유). preview 키는 Non-sensitive 라 실값이 내려온다.
 - 긴 SQL 을 콘솔에 붙여넣을 때는 **끝에 상태 확인 SELECT** 를 둔다. 붙여넣기 잘림을 "결과 표 유무"로 즉시 판별할 수 있다(이번에 150줄에서 잘린 사고를 이 방식으로 잡음).
 
 ---
@@ -138,22 +153,32 @@
 - `src/app/api/generate/thumbnail/route.ts` — `referenceImages` 수용(최대 4, `isSafeImageUrl` 또는 화이트리스트 MIME base64 가드) → `[primary, ...extra]` 로 provider 전달. 세트가 있으면 `consistency: { hasReferenceSet: true }`.
 - `src/lib/ai/image/prompt-builder.ts` — `buildConsistencyBlock({ hasReferenceSet })`: 다중 레퍼런스를 "동일 상품의 다른 크롭"으로 취급하고 **컬러칩을 화이트밸런스 ground-truth** 로 지시.
 
-### 검증 상태
+### 검증 상태 (2026-08-28 런타임 스모크 실행 결과 — preview `81c6841` / `productcraft-f3op9och2`)
 - ✅ **preview 빌드 READY** (타입·번들 통과)
-- ✅ **파생 알고리즘 로직 단위검증** — 크롭 좌표가 항상 원본 내부 중앙, 32단계 양자화 무충돌, 배경 판정이 채도색 보존. (Node 로 순수 로직만 재현해 확인. canvas 자체는 미실행)
-- ❌ **런타임 스모크 미실행** ← **여기서 이어갈 것**
+- ✅ **파생 알고리즘 로직 단위검증** — 크롭 좌표가 항상 원본 내부 중앙, 32단계 양자화 무충돌, 배경 판정이 채도색 보존.
+- ✅ **확인 C — 통과 (브라우저 실행)**. 스모크 계정으로 편집기 복원 → 패널에 "빈 촬영 슬롯 2개 · 예상 2크레딧 · 모델 이미지 없음 — 착용 컷 제외 · **상품 레퍼런스 세트 자동 동봉**" 표시 → 버튼 클릭.
+  - Supabase Storage 공개 객체는 **CORS 허용 확인** — `crossOrigin='anonymous'` 로드 후 `getImageData`·`toDataURL` 모두 성공(canvas 타인트 없음). 폴백 경로로 새지 않는다.
+  - 나가는 요청 2건을 fetch 인터셉터로 캡처: 각각 `referenceImages` **2장**(`data:image/jpeg;base64,…`, 52,299B 디테일 + 3,487B 컬러칩), `imageUrl`=스토리지 원본, `shotPreset`=`flat-lay`/`detail-macro`, `lockSeed`=동일값(1577299142).
+  - 두 컷의 앵커 바이트 길이가 **완전히 동일** → 프로젝트당 1회 파생·캐시 재사용이 실제로 동작.
+- 🟡 **확인 A — 부분 통과**. 서버가 `referenceImages` 를 **수용**하고(zod·크레딧 가드 통과 후 provider 호출까지 도달) 프롬프트 조립까지 실행됐으나, 라우트는 `prompt` 를 **성공 응답에만** 실어 보내므로 P0(이미지 생성 429)로 문자열을 관측하지 못했다.
+  - 대신 배포본과 동일한 소스(`src/lib/ai/image/prompt-builder.ts`)를 Node 로 직접 실행해 스위치를 확인: `hasReferenceSet:true` → `MULTIPLE reference views`·`color-swatch` **둘 다 포함**, `false` → 기존 단일 레퍼런스 문구로 폴백, `consistency` 미지정 → 블록 자체 없음.
+  - 라우트는 `lockSeed` 가 있을 때 `hasReferenceSet: (referenceImages?.length ?? 0) > 0` 로 넘긴다(thumbnail route). 캡처된 요청이 lockSeed+2장이므로 서버에서 true 가 된다.
+- ❌ **확인 B — 미관측**. 성공 차감을 볼 수 없었다. 관측된 것은 **실패 시 무과금**(40→40, usage_events 0행, thumbnails 0행) — RPC 가 성공 후 원자적으로 차감하므로 정상. 패널 추정치는 2컷=2크레딧(컷당 1)로 표시됐다.
 
 ### 다음 세션이 할 일 (순서대로)
-1. **런타임 스모크** — §3 "스모크 계정 만드는 법"으로 계정·프로젝트·섹션 시드 → preview 에서 컷 생성 1회.
-   - 확인 A: 응답 `prompt` 에 다중 레퍼런스 문구(`MULTIPLE reference views`, `color-swatch`)가 포함되는가.
-   - 확인 B: 크레딧이 컷당 1씩만 차감되는가(파생은 무과금이므로 **증가하면 안 됨**).
-   - 확인 C: 브라우저 UI 에서 실제로 파생이 되는가 — Supabase Storage 의 https 원본은 CORS 허용이라 canvas 파생이 성공해야 정상. **실패해 폴백되면 단일 레퍼런스로 동작**하므로 A 문구가 안 나온다. 그 경우 폴백은 정상 동작이지만 기능 효과가 없으니 원인(CORS 헤더) 확인 필요.
+0. 🔴 **선행 — 위 P0(Gemini 이미지 쿼터) 해소.** 해소 전에는 A/B 를 관측할 방법이 없다.
+1. **잔여 스모크 재실행** — §3 "스모크 계정 만드는 법"으로 시드 → preview 에서 컷 1회.
+   - 확인 A: 응답 `prompt` 에 `MULTIPLE reference views`·`color-swatch` 포함.
+   - 확인 B: 컷당 1크레딧 차감(파생 무과금이므로 **증가하면 안 됨**).
+   - 확인 C 는 완료 — 재확인 불필요.
 2. 통과 시 **main 머지 → prod 배포 READY 확인 → 브랜치 삭제**.
 3. 실패 시: 폴백이 동작하므로 서비스 영향은 없다. 원인만 기록하고 머지 보류.
+
+> **머지 판단 메모**: 신규 코드 경로(클라이언트 파생 → 요청 동봉 → 서버 수용 → 프롬프트 분기)는 전부 근거가 있고, 실패 시 단일 레퍼런스 폴백이라 회귀 위험은 낮다. 남은 미관측은 "생성된 컷 이미지"와 "응답에 실려 오는 프롬프트 문자열" 뿐이다. 오너가 원하면 P0 해소 전 머지도 합리적 — 다만 이 문서의 게이트(런타임 스모크 통과 후 머지) 기준으로는 **보류**가 기본값이다.
 
 ### 검증 방법 참고
 API 레벨은 §3 "E2E 재실행 레시피", UI 레벨은 같은 절의 쿠키 주입 방식(브라우저 `document.cookie` 에 `sb-<ref>-auth-token` 주입). ⚠️ in-app 브라우저는 **0×0 뷰포트**라 픽셀 클릭 불가 — DOM `click()` 으로 대체했던 전례가 있다.
 
 ---
 
-마지막 커밋: `9761b1a feat(detail-page): 마스터 레퍼런스 세트 자동 파생` (feat/master-reference-set, preview READY, 런타임 스모크 대기). main 최신: `a9fff49`.
+마지막 상태: `feat/master-reference-set` (preview READY, 스모크 확인 C 통과 / A·B 는 P0 대기, **머지 보류**). main 최신: `a9fff49`.
