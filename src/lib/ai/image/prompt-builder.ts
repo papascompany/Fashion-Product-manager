@@ -113,13 +113,22 @@ const TEXT_SAFE_ZONE =
 /**
  * 컷 간 상품 아이덴티티 일관성 블록 (PRD §3).
  * 마스터 레퍼런스(원본 상품 이미지) 조건화 + 히어로 컬러 화이트밸런스 앵커.
+ * hasReferenceSet=true 이면 다중 레퍼런스(정면+디테일+컬러칩) 언어를 사용한다.
  */
-export function buildConsistencyBlock(opts?: { heroColorNote?: string }): string {
-  const parts = [
-    'this image is part of a single product detail page set — every shot must depict the IDENTICAL product from the reference image',
+export function buildConsistencyBlock(opts?: { heroColorNote?: string; hasReferenceSet?: boolean }): string {
+  const parts: string[] = []
+  if (opts?.hasReferenceSet) {
+    parts.push(
+      'you are given MULTIPLE reference views of the SAME single product: the first is the front view, followed by a detail close-up (fabric weave, stitching, hardware) and a color swatch',
+      'treat all reference images as one identical product seen from different crops — reproduce that exact product; use the color-swatch reference as the ground-truth white balance and garment color',
+    )
+  } else {
+    parts.push('this image is part of a single product detail page set — every shot must depict the IDENTICAL product from the reference image')
+  }
+  parts.push(
     'match the reference exactly: same color under neutral white balance, same fabric texture, same buttons/zippers/hardware, same stitching, same proportions and length',
     'consistent neutral color grading across the set; do not shift hue, saturation, or garment tone',
-  ]
+  )
   if (opts?.heroColorNote?.trim()) {
     parts.push(`anchor white balance and garment color to: ${opts.heroColorNote.trim()}`)
   }
@@ -242,7 +251,7 @@ export interface BuildLayersInput {
   /** 상세페이지 샷 프리셋 — 지정 시 scene/composition 을 프리셋이 소유 */
   shotPreset?: ShotPreset
   /** 컷 세트 일관성 블록 포함 여부 (상세페이지 컷 오케스트레이션) */
-  consistency?: { heroColorNote?: string }
+  consistency?: { heroColorNote?: string; hasReferenceSet?: boolean }
 }
 
 /**

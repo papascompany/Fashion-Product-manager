@@ -1,6 +1,7 @@
 // Zustand store — 'use client' 불필요 (컴포넌트 파일 규약이며 store에는 해당 없음)
 import { create } from 'zustand'
 import type { UserIntent } from '@/lib/ai/types'
+import type { ReferenceAnchors } from '@/lib/detail-page/master-reference'
 
 // ─── v1.1 Phase 2 — Detail Page Editor 섹션 타입 ───────────────────────────
 
@@ -204,6 +205,12 @@ export interface StudioStore {
   detailPageSections: DetailSection[] | null
   /** 상세페이지 컷 일관성 — 프로젝트당 1회 생성해 모든 컷 요청에 동봉하는 lock seed */
   shotLockSeed: number | null
+  /**
+   * 마스터 레퍼런스 앵커(디테일 크롭 + 컬러칩) — 원본 1장에서 파생.
+   * 프로젝트당 1회 파생해 모든 컷 요청에 다중 레퍼런스로 동봉(컷 간 상품 일관성).
+   * setImage(새 원본) 시 무효화. 파생 실패 시 null 로 두고 단일 레퍼런스로 폴백.
+   */
+  referenceAnchors: ReferenceAnchors | null
 
   // Phase 4 — AI Fitting
   /** 현재 업로드된 모델 이미지 (base64 — 막 업로드한 경우) */
@@ -259,6 +266,8 @@ export interface StudioStore {
   setDetailPageSections: (sections: DetailSection[] | null) => void
   /** lock seed 가 없으면 생성 후 반환, 있으면 기존 값 반환 (컷 간 상품 일관성) */
   ensureShotLockSeed: () => number
+  /** 파생된 마스터 레퍼런스 앵커 캐시 설정 (프로젝트당 1회) */
+  setReferenceAnchors: (anchors: ReferenceAnchors | null) => void
 
   // Phase 4 — AI Fitting
   setModelImage: (url: string | null, base64?: string | null) => void
@@ -294,6 +303,7 @@ const initialState = {
   trendKeywords: [],
   detailPageSections: null as DetailSection[] | null,
   shotLockSeed: null as number | null,
+  referenceAnchors: null as ReferenceAnchors | null,
 
   // Phase 4 — AI Fitting
   modelImageBase64: null,
@@ -311,7 +321,8 @@ export const useStudioStore = create<StudioStore>((set, get) => ({
   setMode: (mode) => set({ mode }),
 
   setImage: (url, base64) =>
-    set({ uploadedImageUrl: url, uploadedImageBase64: base64 ?? null }),
+    // 새 원본 이미지 → 파생 레퍼런스 앵커 무효화 (다음 생성에서 재파생)
+    set({ uploadedImageUrl: url, uploadedImageBase64: base64 ?? null, referenceAnchors: null }),
 
   setProjectId: (id) => set({ projectId: id }),
 
@@ -443,6 +454,8 @@ export const useStudioStore = create<StudioStore>((set, get) => ({
     set({ shotLockSeed: seed })
     return seed
   },
+
+  setReferenceAnchors: (anchors) => set({ referenceAnchors: anchors }),
 
   // ─── Phase 4 — AI Fitting ───────────────────────────────────────────────
   setModelImage: (url, base64) =>

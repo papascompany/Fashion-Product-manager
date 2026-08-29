@@ -20,6 +20,7 @@ import {
   estimateShotCredits,
   type ShotJob,
 } from '@/lib/detail-page/shot-plan'
+import { deriveReferenceAnchors, type ReferenceAnchors } from '@/lib/detail-page/master-reference'
 
 const BATCH_SIZE = 3
 
@@ -39,6 +40,8 @@ export function ShotOrchestrationPanel({ sections, onChange, projectId }: ShotOr
   const analysisOriginal = useStudioStore((s) => s.analysisOriginal)
   const getEffectiveAnalysis = useStudioStore((s) => s.getEffectiveAnalysis)
   const ensureShotLockSeed = useStudioStore((s) => s.ensureShotLockSeed)
+  const referenceAnchors = useStudioStore((s) => s.referenceAnchors)
+  const setReferenceAnchors = useStudioStore((s) => s.setReferenceAnchors)
   const result = useStudioStore((s) => s.result)
 
   const [running, setRunning] = useState(false)
@@ -58,7 +61,11 @@ export function ShotOrchestrationPanel({ sections, onChange, projectId }: ShotOr
 
   const jobKey = (j: ShotJob) => `${j.sectionId}:${j.itemIndex}:${j.slot}`
 
-  const runJob = async (job: ShotJob, lockSeed: number): Promise<string> => {
+  const runJob = async (
+    job: ShotJob,
+    lockSeed: number,
+    anchors: ReferenceAnchors | null,
+  ): Promise<string> => {
     if (job.engine === 'fitting') {
       const body: Record<string, unknown> = {
         projectId,
@@ -105,6 +112,9 @@ export function ShotOrchestrationPanel({ sections, onChange, projectId }: ShotOr
     }
     if (uploadedImageBase64) body.imageBase64 = uploadedImageBase64
     else if (uploadedImageUrl) body.imageUrl = uploadedImageUrl
+    // 마스터 레퍼런스 세트 동봉 — 원본(정면) 외 디테일·컬러칩을 다중 레퍼런스로 추가.
+    // 서버가 [primary, detail, colorChip] 순으로 조건화 → 컷 간 상품 일관성 강화.
+    if (anchors) body.referenceImages = [anchors.detail, anchors.colorChip]
 
     const res = await fetch('/api/generate/thumbnail', {
       method: 'POST',
@@ -130,6 +140,18 @@ export function ShotOrchestrationPanel({ sections, onChange, projectId }: ShotOr
     setRunning(true)
     setErrors([])
     const lockSeed = ensureShotLockSeed()
+
+    // 마스터 레퍼런스 앵커 — 프로젝트당 1회 파생 후 캐시 재사용(컷 세트 전체 동일 앵커).
+    // 파생 실패(CORS 타인트 등)면 null 로 두고 단일 레퍼런스로 폴백(회귀 없음).
+    let anchors = referenceAnchors
+    if (!anchors) {
+      const source = uploadedImageBase64 ?? uploadedImageUrl
+      if (source) {
+        anchors = await deriveReferenceAnchors(source)
+        if (anchors) setReferenceAnchors(anchors)
+      }
+    }
+
     const initial: Record<string, JobState> = {}
     for (const j of plan.jobs) initial[jobKey(j)] = 'pending'
     setJobStates(initial)
@@ -146,7 +168,7 @@ export function ShotOrchestrationPanel({ sections, onChange, projectId }: ShotOr
         return next
       })
 
-      const settled = await Promise.allSettled(batch.map((j) => runJob(j, lockSeed)))
+      const settled = await Promise.allSettled(batch.map((j) => runJob(j, lockSeed, anchors)))
       settled.forEach((r, bi) => {
         const job = batch[bi]
         if (r.status === 'fulfilled') {
@@ -177,6 +199,7 @@ export function ShotOrchestrationPanel({ sections, onChange, projectId }: ShotOr
             빈 촬영 슬롯 {plan.jobs.length}개 · 예상 {estimatedCredits}크레딧
             {plan.truncated > 0 && ` · 예산 초과 ${plan.truncated}개 제외`}
             {!hasModelImage && ' · 모델 이미지 없음 — 착용 컷 제외'}
+            {plan.jobs.some((j) => j.engine === 'thumbnail') && ' · 상품 레퍼런스 세트 자동 동봉'}
           </div>
         </div>
         <button
