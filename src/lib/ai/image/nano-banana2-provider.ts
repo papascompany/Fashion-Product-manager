@@ -136,7 +136,17 @@ export class NanaBanana2Provider implements IImageGenProvider {
     }
 
     if (images.length === 0) {
-      throw new Error('이미지 생성에 실패했습니다. 모든 요청이 거부되었습니다.')
+      // 전부 실패 — 사용자 메시지는 그대로 두되, **원인을 cause 로 보존**한다.
+      // 예전에는 generateSingle 이 예외를 삼키고 null 을 반환해 상위 라우트의
+      // 결제/쿼터 분류(BILLING_REQUIRED)가 절대 발화하지 못했다.
+      // cause 는 서버 로그·분류용이며 클라이언트로 그대로 내보내지 않는다.
+      const firstRejection = results.find(
+        (r): r is PromiseRejectedResult => r.status === 'rejected'
+      )
+      throw new Error(
+        '이미지 생성에 실패했습니다. 모든 요청이 거부되었습니다.',
+        firstRejection ? { cause: firstRejection.reason } : undefined
+      )
     }
 
     return {
@@ -228,7 +238,10 @@ export class NanaBanana2Provider implements IImageGenProvider {
       return null
     } catch (err) {
       console.error(`[NanaBanana2] generateSingle(${ratio}) failed:`, err)
-      return null
+      // 예외는 상위(generate)의 allSettled 로 전파한다 — 원인 보존용.
+      // 일부 비율만 실패한 경우 generate() 가 성공분만 모으므로 동작은 이전과 동일하고,
+      // 전부 실패했을 때만 첫 rejection 이 cause 로 쓰인다.
+      throw err
     }
   }
 

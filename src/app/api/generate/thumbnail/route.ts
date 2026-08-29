@@ -22,6 +22,7 @@ import { setImageProvider, getImageProvider } from '@/lib/ai/client'
 import type { AspectRatio, Resolution } from '@/lib/ai/image/types'
 import { getResolutionForPlan } from '@/lib/plan-settings'
 import type { Plan } from '@/lib/plan-settings'
+import { flattenErrorChain } from '@/lib/api-balance'
 
 /**
  * BIZ-10 — 썸네일 동적 단가.
@@ -281,9 +282,13 @@ export async function POST(request: NextRequest) {
   } catch (err) {
     console.error('[/api/generate/thumbnail]', err)
     const message = err instanceof Error ? err.message : '썸네일 생성 중 오류'
+    // 분류는 cause 체인까지 펼친 문자열로 한다 — provider 가 전부 실패를 고정 문구로
+    // 감싸므로 message 만 보면 결제/쿼터 오류를 영영 못 잡는다(일반 500 으로 노출됨).
+    // ⚠️ diagnostic 은 업스트림 원문을 포함하므로 응답 본문에 싣지 않는다.
+    const diagnostic = flattenErrorChain(err)
 
     // Google API 미결제 에러 처리
-    if (message.includes('billing') || message.includes('quota') || message.includes('RESOURCE_EXHAUSTED')) {
+    if (/billing|quota|RESOURCE_EXHAUSTED/i.test(diagnostic)) {
       return NextResponse.json(
         { error: 'Google GenAI 결제가 활성화되지 않았습니다. GCP 결제 수단을 연결해주세요.', code: 'BILLING_REQUIRED' },
         { status: 503 }

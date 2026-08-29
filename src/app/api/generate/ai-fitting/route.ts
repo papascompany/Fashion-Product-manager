@@ -24,6 +24,7 @@ import type { AspectRatio, Resolution } from '@/lib/ai/image/types'
 import { getResolutionForPlan } from '@/lib/plan-settings'
 import type { Plan } from '@/lib/plan-settings'
 import { isSafeImageUrl, MAX_BASE64_LENGTH, extractSafeMimeType } from '@/lib/security'
+import { flattenErrorChain } from '@/lib/api-balance'
 
 // Node Runtime — Storage 업로드 + Google SDK
 // 120s: 참조이미지 fetch(20s) + 3비율 병렬 Gemini(65s) + Storage업로드·DB기록(35s) 여유
@@ -251,14 +252,19 @@ export async function POST(request: NextRequest) {
   } catch (err) {
     console.error('[/api/generate/ai-fitting]', err)
     const message = err instanceof Error ? err.message : '알 수 없는 오류'
+    // 썸네일 라우트와 동일 이유 — provider 가 전부 실패를 고정 문구로 감싸므로
+    // message 만으로는 결제/쿼터/타임아웃을 구분할 수 없다. 분류는 cause 체인으로.
+    // ⚠️ diagnostic 은 업스트림 원문을 포함하므로 응답 본문에 싣지 않는다(debug 는 message 유지).
+    const diagnostic = flattenErrorChain(err)
     let userMessage = `AI Fitting 실패: ${message}`
-    if (/credit_balance|credits.*low|insufficient/i.test(message)) {
+    if (/credit_balance|credits.*low|insufficient|billing|RESOURCE_EXHAUSTED/i.test(diagnostic)) {
+      // 결제 미활성/잔액 소진은 재시도로 풀리지 않는다 — 조치 가능한 문구로 안내.
       userMessage = 'AI API 크레딧이 부족합니다. Google AI Studio 잔액을 확인해주세요.'
-    } else if (/quota|rate.?limit/i.test(message)) {
+    } else if (/quota|rate.?limit/i.test(diagnostic)) {
       userMessage = 'Google AI API 할당량을 초과했습니다. 잠시 후 다시 시도해주세요.'
-    } else if (/timeout/i.test(message)) {
+    } else if (/timeout/i.test(diagnostic)) {
       userMessage = 'AI Fitting 생성 시간이 초과되었습니다. 잠시 후 다시 시도하거나, 비율을 줄여서 시도해보세요.'
-    } else if (/fetch.*image|resolve.*image|HTTP.*fetching/i.test(message)) {
+    } else if (/fetch.*image|resolve.*image|HTTP.*fetching/i.test(diagnostic)) {
       userMessage = '제품/모델 이미지를 불러오지 못했습니다. 다시 업로드 후 시도해주세요.'
     }
     return NextResponse.json({ error: userMessage, debug: message }, { status: 500 })
