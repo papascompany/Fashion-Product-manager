@@ -12,9 +12,10 @@
 > - ⚠️ **잔여(오너)**: ① AI Studio 상단 "공개적으로 노출된 API 키가 감지되었습니다" 경고 + `...FgYM` 경고 배지 — **이 레포 히스토리는 전수 스캔했고 실제 키 없음**(문서 플레이스홀더 `AIzaSy...` 한 줄뿐)이라 노출 지점은 다른 곳으로 추정. 해당 키 회전 권장. ② Development 환경 값은 아직 Non-sensitive. ③ 안 쓰게 된 옛 free-tier 키 폐기.
 > - 부수 코드 수정은 브랜치 **`fix/provider-error-cause`** 로 분리(아래 §7).
 
-> 🟢 **레퍼런스 세트 — 스모크 게이트 통과 (머지 판단만 남음)**
-> 브랜치 **`feat/master-reference-set`** (main 미머지). **확인 A·B·C 전부 통과** — 근거는 §6.
-> 남은 것은 **오너의 머지 승인** 뿐이다(머지 = prod 배포).
+> ✅ **머지·배포 완료 (2026-08-28)** — 두 브랜치 모두 main 반영 후 prod 배포 검증까지 끝났다.
+> `main = e18d4d6` (머지 커밋 2개: `c8bb91b` 레퍼런스 세트 · `e18d4d6` provider cause). prod 배포 **READY**(38s, `productcraft-ai.vercel.app`).
+> **머지 후 프로덕션 런타임 스모크 통과** — 레퍼런스 세트 동봉 시 `MULTIPLE reference views`·`color-swatch` 포함(실이미지 785KB), 미동봉 대조군은 기존 단일 문구(626KB), 각각 1크레딧(40→39→38), usage_events 2행 전부 `credits_used:1`.
+> 두 머지가 `thumbnail/route.ts` 를 공유했으나 자동 머지 후 **두 기능 공존 확인**(referenceImages 스키마·`hasReferenceSet` 분기 + `flattenErrorChain` 분류·`BILLING_REQUIRED`). 브랜치 2개 로컬·원격 삭제 완료.
 
 > ✅ **P0 해소 (2026-08-01)**: Supabase(`jspajtwnxnuvutekbhii`) 오너가 복구 완료 — DNS·Auth·DB·Storage 정상, 데이터 보존 확인(기존 사용자/썸네일 존재). 재발 방지: 무료 티어면 7일 비활성 시 다시 pause 될 수 있음 — 유료 전환 또는 주기적 keep-alive 검토(오너).
 >
@@ -47,9 +48,8 @@
 - 커밋 트레일러: 현재 활성 모델 기준(최근: `Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>`). 커밋/푸시는 요청 시에만(단, preview 빌드 검증 목적 push 는 이 문서가 정의한 절차로 허용).
 
 ## 2. 브랜치 현황
-- **`main` = `a9fff49`** — 감사 브랜치 + 상세페이지 엔진 Phase 1+2 전부 반영, **prod 배포 완료**. 정본.
-- **`feat/master-reference-set`** ← main 미머지. preview READY + **스모크 확인 A·B·C 전부 통과**(2026-08-28). 머지 승인 대기. 상세 §6.
-- **`fix/provider-error-cause`** ← main 미머지. provider 가 삼키던 실패 원인을 `cause` 로 보존해 결제/쿼터 오류 분류를 복구. preview READY + 런타임 검증 완료. 상세 §7.
+- **`main` = `e18d4d6`** — 감사 브랜치 + 상세페이지 엔진 Phase 1+2 + **마스터 레퍼런스 세트** + **provider cause 보존** 전부 반영, **prod 배포 완료·런타임 검증 완료**. 정본.
+- (삭제 완료) `feat/master-reference-set`·`fix/provider-error-cause` — main 머지 후 로컬·원격 삭제. 복구 필요 시 `git branch <name> 482f6a8` / `0d3146e`.
 - (삭제 완료) `audit-immediate-thisweek`·`feat/detail-page-engine` — main 에 머지 후 로컬·원격 삭제. 복구 필요 시 `git branch <name> e14a958` / `432628a`.
 
 **적용된 마이그레이션 (prod DB)**: 001~012(기존) + **013·014·015·016** + **017**(generations detail_page) + **018·019**(가드 수정). 다음 신규 마이그레이션은 **020부터**.
@@ -104,7 +104,6 @@
 4. 정리: storage 객체 → thumbnails → generations → usage_events → ai_fittings → projects → auth 사용자 순으로 삭제.
 
 ## 4. 예정 내역 (우선순위 순)
-0. 🟢 **머지 승인 2건 대기** — `feat/master-reference-set`(§6, 게이트 통과) · `fix/provider-error-cause`(§7, 검증 완료). 둘 다 오너 승인 후 머지.
 1. **잔여 런타임 검증 1건** — **AI Fitting 실생성 1회**(모델 사진 필요 — 오너가 앱에서 1회 업로드하면 `shotVariant`·모델락·컷 세트 일관성까지 확인 가능). 패널 UI 클릭-스루는 2026-08-08 완료(§3 참조).
 2. ⚠️ **결제 오픈 전 필수** — `TOSS_SECRET_KEY`/`TOSS_CLIENT_KEY` 가 **모든 Vercel 환경에 미설정**이라 Toss webhook 핸들러는 현재 fail-closed(요청 거부)이며 스모크 불가. 015 RPC 레벨(멱등성·금액·취소)은 검증 완료. 결제 오픈 시 secret 설정 → 핸들러 스모크 필수.
 3. **오너 결정 3건** — ① 크레딧 번들 단가(**동적 단가 반영 후 9컷 ≈ 9~13크레딧** — 재산정 필요) ② 세리프 라이선스(OFL Fraunces/Noto Serif KR vs 상용; 현재 system fallback) ③ 쿠팡 대표컷(1000×1000) 파이프·설명컷 기본값·테마 출시 우선순위·AI 고지 법무.
@@ -167,10 +166,8 @@
 - ✅ **확인 B — 통과**. 컷당 정확히 **1크레딧**(39→38, 38→37). 파생은 무과금이라 레퍼런스 세트 동봉이 단가를 올리지 않는다.
   - DB 정합: usage_events 3행(전부 `credits_used:1`, `thumbnail_generated`) · thumbnails 3행 · credits_left 40→37 일치.
 
-### 다음 세션이 할 일
-1. **오너 머지 승인 대기** — 게이트(확인 A·B·C)는 전부 통과했다. 머지 = prod 배포라 승인 후 진행.
-2. 머지 시: `main` 머지 → prod 배포 READY 확인 → `feat/master-reference-set` 로컬·원격 삭제.
-3. 같이 대기 중인 브랜치: **`fix/provider-error-cause`**(§7) — 순서는 무관하나 둘 다 main 기준이라 각각 머지 후 배포 확인.
+### 결과
+**머지 완료** — main `c8bb91b`. 머지 후 프로덕션 런타임 스모크로 동일 결과 재확인(동봉 785KB / 대조군 626KB, 각 1크레딧). 브랜치 삭제 완료.
 
 > **머지 판단 메모**: 신규 코드 경로(클라이언트 파생 → 요청 동봉 → 서버 수용 → 프롬프트 분기 → 실제 컷 생성)가 전부 런타임으로 관측됐고, 실패 시 단일 레퍼런스 폴백이라 회귀 위험은 낮다. 대조군 비교까지 됐으므로 추가 검증 없이 머지 가능하다.
 
@@ -179,7 +176,7 @@ API 레벨은 §3 "E2E 재실행 레시피", UI 레벨은 같은 절의 쿠키 �
 
 ---
 
-## 7. 🟢 대기 중 — `fix/provider-error-cause` (provider 실패 원인 보존)
+## 7. ✅ 머지 완료 — provider 실패 원인 보존 (`fix/provider-error-cause` → main `e18d4d6`)
 
 **문제**: `NanaBanana2Provider.generateSingle` 이 예외를 catch 해 `null` 을 반환 → `Promise.allSettled` 가 전부 `fulfilled(null)` → `generate()` 가 고정 문구로 던져 **업스트림 원문이 소실**. 그 결과 thumbnail 라우트의 `BILLING_REQUIRED`(503) 분기가 **한 번도 발화하지 못하고** 사용자에게 일반 500 만 노출됐다. ai-fitting 도 동일.
 
@@ -199,8 +196,8 @@ API 레벨은 §3 "E2E 재실행 레시피", UI 레벨은 같은 절의 쿠키 �
 
 추가로 스텁 SDK 로 429 를 강제한 단위 테스트 15건 통과(버그 재현·원문 미유출·`flattenErrorChain` 엣지·**일부 비율만 실패 시 성공분만 반환하는 회귀 가드**).
 
-**남은 것**: ① 오너 머지 승인 ② ai-fitting 은 여전히 500 반환(문구만 개선) — thumbnail 처럼 503+code 로 맞출지는 응답 계약 변경이라 별건으로 분리.
+**남은 것**: ai-fitting 은 여전히 500 반환(문구만 개선) — thumbnail 처럼 503+code 로 맞출지는 응답 계약 변경이라 별건으로 남겨둠.
 
 ---
 
-마지막 상태: `feat/master-reference-set`(게이트 통과) · `fix/provider-error-cause`(검증 완료) **둘 다 머지 승인 대기**. main 최신: `a9fff49` (2026-08-28 키 교체 후 재배포 완료, 이미지 생성 정상).
+마지막 상태: **`main = e18d4d6`, prod 배포 READY·런타임 검증 완료.** 대기 중인 브랜치 없음. 남은 오너 조치는 상단 P0 배너의 잔여 3건(노출 키 회전 · Development env Sensitive 전환 · 옛 free-tier 키 폐기).
