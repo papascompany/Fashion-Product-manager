@@ -16,7 +16,7 @@
 - **AI 이미지**: Google Nano Banana 2 (Gemini 3.1 Flash Image)
 - **결제**: Toss Payments
 - **공유**: CoolSMS (문자) · Kakao Share SDK
-- **호스팅**: Vercel (GitHub Actions 자동 배포)
+- **호스팅**: Vercel (GitHub Integration 자동 배포 — `main` → Production, 그 외 브랜치/PR → Preview)
 
 ---
 
@@ -77,13 +77,28 @@ pnpm install
 pnpm dev
 ```
 
+> 런타임 고정: Node **24.x** · pnpm **10** (`package.json` 의 `engines` / `packageManager`).
+> Vercel 프로젝트·CI 도 같은 버전을 씁니다.
+
 http://localhost:3000 열기.
 
 ### 3. 빌드 & 배포
 
 ```bash
-pnpm build         # 로컬 빌드 검증
-git push origin main  # → GitHub Actions가 자동으로 Vercel 배포
+pnpm build            # 로컬 빌드 검증
+git push origin main  # → Vercel GitHub Integration 이 Production 배포
+```
+
+배포는 **Vercel GitHub Integration 단일 경로**입니다. `main` 푸시는 Production,
+그 외 브랜치·PR 은 Preview 로 자동 배포됩니다. Vercel CLI 나 배포 워크플로를
+따로 돌릴 필요가 없습니다.
+
+GitHub Actions(`.github/workflows/deploy.yml`)는 **배포하지 않고 검증만** 합니다 —
+`main` 푸시와 `main` 대상 PR 에서 타입체크 → 단위 테스트 → 린트를 실행합니다.
+로컬에서 같은 게이트를 미리 돌리려면:
+
+```bash
+pnpm exec tsc --noEmit && pnpm test:run && pnpm lint
 ```
 
 ---
@@ -142,7 +157,8 @@ src/
 | `pnpm build` | 프로덕션 빌드 |
 | `pnpm start` | 프로덕션 서버 |
 | `pnpm lint` | ESLint |
-| `pnpm test` | Vitest 단위 테스트 |
+| `pnpm test` | Vitest 단위 테스트 (watch) |
+| `pnpm test:run` | Vitest 단위 테스트 1회 실행 (CI 와 동일) |
 | `pnpm test:e2e` | Playwright E2E |
 
 ---

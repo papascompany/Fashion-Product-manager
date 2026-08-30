@@ -2,6 +2,10 @@
   "name": "productcraft-ai",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": "24.x"
+  },
+  "packageManager": "pnpm@10.33.4",
   "scripts": {
     "dev": "next dev",
     "build": "next build",

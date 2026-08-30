@@ -2,6 +2,10 @@ import { createClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 
+// Node Runtime — multipart 수신 + Supabase Storage 업로드 (AI 호출 없음)
+// 30s: 20MB 본문 수신(느린 업링크 20s) + Storage 업로드·공개 URL 발급(10s) 여유
+export const maxDuration = 30
+
 const MAX_SIZE = 20 * 1024 * 1024 // 20MB
 const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp']
 const BUCKET = 'product-images'
