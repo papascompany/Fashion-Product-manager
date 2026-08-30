@@ -75,9 +75,17 @@ export const NEXT_PUBLIC_SUPABASE_URL =
 export const NEXT_PUBLIC_SUPABASE_ANON_KEY =
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? ''
 
-/** Toss Payments 클라이언트 키 */
+/**
+ * Toss Payments 클라이언트 키 (공개값 — 브라우저 번들에 인라인된다)
+ *
+ * 과거 `?? optionalEnv('TOSS_CLIENT_KEY')` 폴백이 있었으나 제거했다.
+ * `NEXT_PUBLIC_*` 만 빌드 타임에 값으로 치환되고 접두사 없는 `TOSS_CLIENT_KEY` 는
+ * 클라이언트 번들에 주입되지 않으므로, 폴백은 서버에서만 우연히 동작하고
+ * 브라우저에서는 항상 '' 였다 — 이름 불일치를 가려 등록 실수를 늦게 드러내는
+ * 죽은 코드다. 이름은 `.env.local.example` 과 동일하게 하나만 쓴다.
+ */
 export const NEXT_PUBLIC_TOSS_CLIENT_KEY =
-  process.env.NEXT_PUBLIC_TOSS_CLIENT_KEY ?? optionalEnv('TOSS_CLIENT_KEY')
+  process.env.NEXT_PUBLIC_TOSS_CLIENT_KEY ?? ''
 
 /** Kakao JavaScript SDK 키 */
 export const NEXT_PUBLIC_KAKAO_JS_KEY =

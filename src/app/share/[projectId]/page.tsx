@@ -2,7 +2,18 @@
  * 공유 수신 페이지 (공개 — 인증 불필요)
  * GET /share/[projectId]
  *
- * 서비스 롤 클라이언트로 RLS 우회 → 누구나 볼 수 있는 상품 소개 페이지
+ * 서비스 롤 클라이언트로 RLS 우회 → 링크를 받은 사람이 볼 수 있는 상품 소개 페이지
+ *
+ * ⚠️ 인가 게이트 (감사 이슈 2):
+ *   RLS 를 우회하므로 `status = 'done'` 만 확인하면 **소유자가 한 번도 공유하지 않은
+ *   프로젝트**까지 URL 만 알면 제3자가 전부 열람한다. 그래서 렌더 전에
+ *   `shares` 테이블에 해당 project_id 의 공유 기록이 실제로 있는지 확인하고,
+ *   없거나 조회가 실패하면 404 로 떨어뜨린다(fail-closed).
+ *
+ *   판정은 **기존 컬럼(project_id)만** 사용한다. 020_share_gate.sql 이 추가하는
+ *   token / revoked_at 은 오너가 Supabase 콘솔에서 수동 적용하므로, 적용 전에
+ *   코드가 참조하면 모든 공유 페이지가 죽는다. 020 적용을 확인한 뒤에만
+ *   revoked_at 필터를 켤 것.
  */
 
 import { notFound } from 'next/navigation'
@@ -22,11 +33,46 @@ interface SharePageProps {
   params: Promise<{ projectId: string }>
 }
 
+type AdminClient = Awaited<ReturnType<typeof createAdminClient>>
+
+// ─── 인가 게이트 ──────────────────────────────────────────────────────────────
+
+/** 공유 페이지는 링크를 받은 사람만 보는 것이므로 검색엔진 색인 대상이 아니다. */
+const NO_INDEX_ROBOTS: Metadata['robots'] = { index: false, follow: false }
+
+/**
+ * 소유자가 이 프로젝트를 실제로 공유했는지 판정한다.
+ * 조회 자체가 실패해도 안전측(false → 404)으로 떨어진다.
+ */
+async function hasShareRecord(supabase: AdminClient, projectId: string): Promise<boolean> {
+  const { data, error } = await supabase
+    .from('shares')
+    .select('id')
+    .eq('project_id', projectId)
+    .limit(1)
+
+  if (error) {
+    console.error('[/share] shares lookup error:', error.message)
+    return false
+  }
+
+  return (data?.length ?? 0) > 0
+}
+
 // ─── 동적 메타데이터 ───────────────────────────────────────────────────────────
 
 export async function generateMetadata({ params }: SharePageProps): Promise<Metadata> {
   const { projectId } = await params
   const supabase = await createAdminClient()
+
+  // 공유 기록이 없으면 상품 정보를 메타데이터(제목/OG)로도 노출하지 않는다.
+  if (!(await hasShareRecord(supabase, projectId))) {
+    return {
+      title: 'ProductCraft AI',
+      description: '팔리는 상품 콘텐츠를 AI로 자동 생성',
+      robots: NO_INDEX_ROBOTS,
+    }
+  }
 
   const { data: gens } = await supabase
     .from('generations')
@@ -45,6 +91,7 @@ export async function generateMetadata({ params }: SharePageProps): Promise<Meta
   return {
     title: `${productName} — ProductCraft AI`,
     description: tagline ?? '팔리는 상품 콘텐츠를 AI로 자동 생성',
+    robots: NO_INDEX_ROBOTS,
     openGraph: {
       title: productName,
       description: tagline ?? '팔리는 상품 콘텐츠를 AI로 자동 생성',
@@ -58,6 +105,11 @@ export async function generateMetadata({ params }: SharePageProps): Promise<Meta
 export default async function SharePage({ params }: SharePageProps) {
   const { projectId } = await params
   const supabase = await createAdminClient()
+
+  // 인가 게이트 — 소유자가 공유한 프로젝트만 공개한다 (조회 실패 시에도 404)
+  if (!(await hasShareRecord(supabase, projectId))) {
+    notFound()
+  }
 
   // 프로젝트 조회
   const { data: project } = await supabase

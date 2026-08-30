@@ -18,6 +18,7 @@ import type { DetailSection, ShotSlot } from '@/store/studio'
 import { checkCreditGuard, deductCredits } from '@/lib/credit-guard'
 
 export const runtime = 'nodejs'
+// 30s: AI 호출 없음 — 섹션 → HTML 조립(CPU) + 크레딧 차감 Supabase 왕복만 수행
 export const maxDuration = 30
 
 // ─── 스키마 ─────────────────────────────────────────────────────────────────
@@ -437,7 +438,7 @@ function escapeHtml(str: string): string {
 
 /** img src 로 안전한 URL 인지 — javascript:/vbscript:/data:(비이미지) 차단. */
 function isSafeUrl(url: string): boolean {
-  const s = url.replace(/[\s -]+/g, '').toLowerCase()
+  const s = url.replace(/[\s\x00-\x1f]+/g, '').toLowerCase()
   if (s.startsWith('javascript:') || s.startsWith('vbscript:')) return false
   if (s.startsWith('data:') && !s.startsWith('data:image/')) return false
   return true

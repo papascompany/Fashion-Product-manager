@@ -102,6 +102,9 @@ export async function proxy(request: NextRequest) {
 
 export const config = {
   matcher: [
-    '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
+    // 크롤러/PWA 정적 파일(robots.txt·sitemap.xml·manifest)은 프록시 제외.
+    // 제외하지 않으면 비인증 요청이 /auth/login 으로 리다이렉트돼 robots.txt 가 무효화된다.
+    // 각 항목은 `$` 로 경로 전체를 고정해 과잉 제외(인증 우회)를 막는다.
+    '/((?!_next/static|_next/image|favicon.ico|robots\\.txt$|sitemap\\.xml$|manifest\\.json$|site\\.webmanifest$|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
   ],
 }

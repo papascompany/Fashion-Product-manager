@@ -42,10 +42,44 @@ export function ShareSheet({
 
   const shareUrl = `${typeof window !== 'undefined' ? window.location.origin : ''}/share/${projectId}`
 
+  /**
+   * 공유 기록 등록 — /share/[projectId] 페이지의 공개 게이트 근거가 된다.
+   *
+   * 공유 페이지는 `shares` 행이 있어야만 렌더된다(소유자가 공유한 적 없는 프로젝트가
+   * URL 추측만으로 열리던 문제를 막기 위함). 따라서 링크 복사·카카오 공유도
+   * SMS 와 마찬가지로 먼저 이 기록을 남겨야 수신자가 링크를 열 수 있다.
+   *
+   * 실패하면 죽은 링크(404)를 사용자 손에 쥐여주게 되므로 공유 자체를 중단한다.
+   */
+  const registerShare = async (method: 'link' | 'kakao'): Promise<boolean> => {
+    try {
+      const res = await fetch('/api/share', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ method, projectId, productName, tagline, shareUrl }),
+      })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        throw new Error(typeof data.error === 'string' ? data.error : '공유 링크 준비에 실패했습니다.')
+      }
+      return true
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '공유 링크 준비에 실패했습니다.')
+      return false
+    }
+  }
+
   const handleCopyLink = async () => {
-    await navigator.clipboard.writeText(shareUrl)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2500)
+    setError(null)
+    setLoading(true)
+    try {
+      if (!(await registerShare('link'))) return
+      await navigator.clipboard.writeText(shareUrl)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2500)
+    } finally {
+      setLoading(false)
+    }
   }
 
   const handleSMS = async (e: React.FormEvent) => {
@@ -82,7 +116,16 @@ export function ShareSheet({
     }
   }
 
-  const handleKakao = () => {
+  const handleKakao = async () => {
+    setError(null)
+    setLoading(true)
+    // 공유 기록을 먼저 남겨야 수신자가 링크를 열 수 있다 (registerShare 주석 참조).
+    // 카카오 SDK 미초기화 시의 링크 복사 fallback 도 같은 기록을 재사용하므로
+    // 여기서 한 번만 등록하고, fallback 에서는 재등록하지 않는다.
+    const registered = await registerShare('kakao')
+    setLoading(false)
+    if (!registered) return
+
     if (typeof window !== 'undefined' && window.Kakao?.isInitialized()) {
       window.Kakao.Share.sendDefault({
         objectType: 'feed',
@@ -99,7 +142,10 @@ export function ShareSheet({
       setKakaoFallbackNote(null)
     } else {
       // UX-06 — SDK 미초기화 시 명시적 안내 + 링크 복사 fallback
-      handleCopyLink()
+      // 공유 기록은 위에서 이미 남겼으므로 여기서는 클립보드 복사만 한다(중복 등록 방지).
+      await navigator.clipboard.writeText(shareUrl)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2500)
       setKakaoFallbackNote('카카오 공유 준비 중입니다. 대신 링크를 복사했어요.')
     }
   }

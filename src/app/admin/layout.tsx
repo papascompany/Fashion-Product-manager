@@ -6,6 +6,8 @@ import { LayoutDashboard, Users, FileText, CreditCard, Settings, ArrowLeft } fro
 export const metadata: Metadata = {
   title: 'Admin · ProductCraft AI',
   description: '운영 대시보드',
+  // 운영 화면은 검색 색인 대상이 아니다 (robots.txt 차단과 별개로 meta 로도 이중 차단)
+  robots: { index: false, follow: false },
 }
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {

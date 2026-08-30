@@ -23,6 +23,9 @@ import { checkCreditGuard, deductCredits } from '@/lib/credit-guard'
 
 export const runtime = 'edge'
 export const dynamic = 'force-dynamic'
+// Edge Function 은 route segment 의 maxDuration 이 적용되지 않는다
+// (그 설정은 Node 서버리스 함수용). 프로젝트 기본 300s 상속도 Edge 에는 해당하지 않으므로
+// 여기서 상한을 선언하지 않는다 — 비용 상한이 필요하면 Node 런타임으로 옮겨야 한다.
 
 const PlanRequestSchema = z.object({
   productName: z.string().min(1),

@@ -5,7 +5,7 @@
  */
 
 import { createAdminClient } from '@/lib/supabase/server'
-import { TrendingUp, Users, Sparkles, CreditCard, Activity } from 'lucide-react'
+import { TrendingUp, Users, Sparkles, CreditCard, Activity, AlertTriangle } from 'lucide-react'
 import { getApiHealth } from '@/lib/api-balance'
 
 interface Stats {
@@ -36,14 +36,39 @@ interface RecentUser {
   created_at: string
 }
 
-async function loadStats(): Promise<Stats | null> {
+/**
+ * 통계 로드 결과.
+ *
+ * 이전에는 실패 시 null 을 돌려주고 화면이 `?? 0` 으로 폴백해,
+ * 권한 오류(42501) 상황에서도 "총 가입자 0 · MRR ₩0" 이 정상값처럼 보였다.
+ * 오너의 단가·번들 결정 근거가 되는 화면이라 실패를 실패로 표시해야 한다.
+ */
+type StatsResult =
+  | { ok: true; stats: Stats }
+  | { ok: false; reason: string }
+
+/** 값을 못 불러왔을 때의 자리표시자 — 0 과 명확히 구분된다. */
+const UNAVAILABLE = '—'
+
+/** Postgres 에러 코드를 오너가 조치 가능한 한 줄로 변환 (상세는 서버 로그에만 남긴다). */
+function describeStatsError(code: string | undefined): string {
+  if (code === '42501') {
+    return '권한 오류 (42501) — v_admin_stats 조회 권한이 없습니다. supabase/migrations/021_admin_stats_grant.sql 적용이 필요합니다.'
+  }
+  if (code === '42P01') {
+    return '뷰 없음 (42P01) — v_admin_stats 가 존재하지 않습니다. 008 마이그레이션 적용 상태를 확인하세요.'
+  }
+  return `통계 조회 실패${code ? ` (${code})` : ''} — 서버 로그의 [admin/dashboard] 항목을 확인하세요.`
+}
+
+async function loadStats(): Promise<StatsResult> {
   const admin = await createAdminClient()
   const { data, error } = await admin.from('v_admin_stats').select('*').single()
   if (error) {
     console.error('[admin/dashboard] stats load failed:', error)
-    return null
+    return { ok: false, reason: describeStatsError(error.code) }
   }
-  return data as Stats
+  return { ok: true, stats: data as Stats }
 }
 
 async function loadRecentEvents(): Promise<RecentEvent[]> {
@@ -67,11 +92,14 @@ async function loadRecentUsers(): Promise<RecentUser[]> {
 }
 
 export default async function AdminDashboard() {
-  const [stats, events, users] = await Promise.all([
+  const [statsResult, events, users] = await Promise.all([
     loadStats(),
     loadRecentEvents(),
     loadRecentUsers(),
   ])
+
+  // 실패 시 stats 는 null 이고, 각 카드는 0 대신 UNAVAILABLE 을 그린다.
+  const stats = statsResult.ok ? statsResult.stats : null
 
   // API 헬스 — env 기반(동기, 네트워크 호출 없음). 실시간 잔액이 아니라 키 설정 상태.
   const apiHealth = getApiHealth()
@@ -85,31 +113,49 @@ export default async function AdminDashboard() {
         <h1 className="text-[28px] font-black text-[#111111]">대시보드</h1>
       </header>
 
+      {/* 통계 로드 실패 배너 — 숫자를 0 으로 위장하지 않고 상태를 명시한다 */}
+      {!statsResult.ok && (
+        <div className="mb-4 p-4" style={{ border: '1px solid #d30005', backgroundColor: '#fff5f5' }}>
+          <div className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-[#d30005] mb-1.5">
+            <AlertTriangle className="w-3 h-3" />
+            통계 불러오기 실패
+          </div>
+          <div className="text-[13px] font-black text-[#111111]">
+            아래 지표·플랜 분포는 실제 값이 아닙니다. 0 이 아니라 “{UNAVAILABLE}” 로 표시합니다.
+          </div>
+          <div className="text-[11px] text-[#9e9ea0] mt-1">{statsResult.reason}</div>
+        </div>
+      )}
+
       {/* 지표 카드 그리드 */}
       <div className="grid grid-cols-2 md:grid-cols-4 mb-10" style={{ border: '1px solid #e5e5e5' }}>
         <StatCard
           icon={Users}
           label="총 가입자"
-          value={stats?.total_users ?? 0}
+          value={stats ? stats.total_users : UNAVAILABLE}
           delta={stats ? `+${stats.new_users_7d} 지난 7일` : undefined}
+          unavailable={!stats}
           borderRight
         />
         <StatCard
           icon={TrendingUp}
           label="활성 셀러 (7일)"
-          value={stats?.active_users_7d ?? 0}
+          value={stats ? stats.active_users_7d : UNAVAILABLE}
+          unavailable={!stats}
           borderRight
         />
         <StatCard
           icon={Sparkles}
           label="생성 (7일)"
-          value={stats?.generations_7d ?? 0}
+          value={stats ? stats.generations_7d : UNAVAILABLE}
+          unavailable={!stats}
           borderRight
         />
         <StatCard
           icon={CreditCard}
           label="MRR"
-          value={`₩${(stats?.mrr ?? 0).toLocaleString()}`}
+          value={stats ? `₩${stats.mrr.toLocaleString()}` : UNAVAILABLE}
+          unavailable={!stats}
         />
       </div>
 
@@ -117,10 +163,10 @@ export default async function AdminDashboard() {
       <section className="mb-10">
         <SectionTitle>플랜 분포</SectionTitle>
         <div className="grid grid-cols-2 md:grid-cols-4" style={{ border: '1px solid #e5e5e5' }}>
-          <PlanCell plan="Free"     count={stats?.free_users ?? 0}     borderRight />
-          <PlanCell plan="Starter"  count={stats?.starter_users ?? 0}  borderRight />
-          <PlanCell plan="Pro"      count={stats?.pro_users ?? 0}      borderRight  highlight />
-          <PlanCell plan="Business" count={stats?.business_users ?? 0} />
+          <PlanCell plan="Free"     count={stats ? stats.free_users : null}     borderRight />
+          <PlanCell plan="Starter"  count={stats ? stats.starter_users : null}  borderRight />
+          <PlanCell plan="Pro"      count={stats ? stats.pro_users : null}      borderRight  highlight />
+          <PlanCell plan="Business" count={stats ? stats.business_users : null} />
         </div>
       </section>
 
@@ -233,12 +279,13 @@ export default async function AdminDashboard() {
 // ─── 서브 컴포넌트 ─────────────────────────────────────────────────────────
 
 function StatCard({
-  icon: Icon, label, value, delta, borderRight,
+  icon: Icon, label, value, delta, unavailable, borderRight,
 }: {
   icon: React.ComponentType<{ className?: string }>
   label: string
   value: string | number
   delta?: string
+  unavailable?: boolean
   borderRight?: boolean
 }) {
   return (
@@ -247,13 +294,22 @@ function StatCard({
         <Icon className="w-3 h-3" />
         {label}
       </div>
-      <div className="text-[28px] font-black text-[#111111] tracking-tight">{value}</div>
-      {delta && <div className="text-[11px] text-[#007d48] mt-1">{delta}</div>}
+      <div
+        className="text-[28px] font-black text-[#111111] tracking-tight"
+        style={{ color: unavailable ? '#9e9ea0' : undefined }}
+      >
+        {value}
+      </div>
+      {unavailable ? (
+        <div className="text-[11px] text-[#d30005] mt-1">불러오기 실패</div>
+      ) : (
+        delta && <div className="text-[11px] text-[#007d48] mt-1">{delta}</div>
+      )}
     </div>
   )
 }
 
-function PlanCell({ plan, count, borderRight, highlight }: { plan: string; count: number; borderRight?: boolean; highlight?: boolean }) {
+function PlanCell({ plan, count, borderRight, highlight }: { plan: string; count: number | null; borderRight?: boolean; highlight?: boolean }) {
   return (
     <div
       className="p-4"
@@ -264,7 +320,12 @@ function PlanCell({ plan, count, borderRight, highlight }: { plan: string; count
       }}
     >
       <div className="text-[10px] font-black uppercase tracking-widest text-[#9e9ea0] mb-1.5">{plan}</div>
-      <div className="text-[22px] font-black text-[#111111]">{count.toLocaleString()}</div>
+      <div
+        className="text-[22px] font-black text-[#111111]"
+        style={{ color: count === null ? '#9e9ea0' : undefined }}
+      >
+        {count === null ? UNAVAILABLE : count.toLocaleString()}
+      </div>
     </div>
   )
 }

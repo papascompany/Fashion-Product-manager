@@ -24,6 +24,13 @@ import { getResolutionForPlan } from '@/lib/plan-settings'
 import type { Plan } from '@/lib/plan-settings'
 import { flattenErrorChain } from '@/lib/api-balance'
 
+// Node Runtime — Storage 업로드 + Google SDK
+// 180s: 참조이미지 사전 해상(20s) + 비율별 fallback fetch(15s) + Gemini(65s, 전 비율 병렬)
+//       = 내부 타임아웃 합 100s. 나머지 80s 는 최대 48장 Storage 업로드 +
+//       record_thumbnail_generation RPC 여유.
+// 이 앱에서 가장 비싼 경로 — 프로젝트 기본 300s 상속을 끊어 비용 상한을 건다.
+export const maxDuration = 180
+
 /**
  * BIZ-10 — 썸네일 동적 단가.
  * 기존 고정 3 크레딧 → count × ratios 비례 차감.

@@ -8,6 +8,15 @@
  *   - SEC-NEW-02: shares.insert error 시 5xx 반환 (RLS 거부 → SMS 발송 차단).
  *   - BIZ-08 (SMS 부분): Free 차단, Starter 5건/일, Pro/Business 30건/일.
  *     카카오 공유는 클라이언트 SDK 에서 처리되므로 본 라우트는 SMS·link 만.
+ *   - SMS fail-closed: COOLSMS 키가 하나라도 없으면 운영에서는 503 을 반환한다.
+ *     예전에는 mock messageId 로 성공 응답 + 일일 쿼터 차감이 일어나 사용자는
+ *     "보냈다"고 믿었지만 문자는 가지 않았다. 확인 순서를 shares insert 와
+ *     쿼터 차감보다 앞에 두어 실패 시 부수효과가 남지 않게 한다.
+ *     비운영(NODE_ENV !== 'production')에서는 기존 mock 동작을 유지한다.
+ *
+ * ⚠️ shares insert 는 /share/[projectId] 공개 게이트의 근거이기도 하다
+ *    (공유 기록이 있는 프로젝트만 공개). 이 라우트가 기록을 남기지 않으면
+ *    해당 공유 링크는 404 가 된다.
  *
  * runtime: nodejs (CoolSMS 가 crypto 모듈 사용).
  */
@@ -75,6 +84,21 @@ const DAILY_SMS_CAP: Record<Plan, number> = {
 
 const SHARE_EVENT_TYPE = 'share_sms_sent'
 
+// ─── SMS 구성 여부 (fail-closed) ────────────────────────────────────────────
+// 키가 없으면 예전에는 mock messageId 를 성공으로 반환해 "보냈다"고 응답하면서
+// 일일 쿼터까지 차감했다(문자는 안 감). 운영에서는 발송 전에 막는다.
+// env.ts 의 COOLSMS_* 는 누락 시 throw 하므로 여기서는 존재 여부만 본다.
+function isSmsConfigured(): boolean {
+  return Boolean(
+    process.env.COOLSMS_API_KEY &&
+      process.env.COOLSMS_API_SECRET &&
+      process.env.COOLSMS_FROM_NUMBER
+  )
+}
+
+const SMS_NOT_CONFIGURED_MESSAGE =
+  'SMS 발송이 구성되지 않았습니다. 링크 복사나 카카오 공유를 이용해 주세요.'
+
 export async function POST(request: NextRequest) {
   try {
     const supabase = await createClient()
@@ -131,6 +155,13 @@ export async function POST(request: NextRequest) {
           { error: 'SMS 발송에는 전화번호가 필요합니다.' },
           { status: 400 }
         )
+      }
+
+      // 구성 확인은 shares insert / 쿼터 차감보다 **먼저** 한다.
+      // 뒤에서 막으면 문자는 안 갔는데 공유 기록만 남아 공유 페이지가 열린다.
+      if (process.env.NODE_ENV === 'production' && !isSmsConfigured()) {
+        console.error('[/api/share] COOLSMS env not configured — SMS fail-closed')
+        return NextResponse.json({ error: SMS_NOT_CONFIGURED_MESSAGE }, { status: 503 })
       }
 
       // 사용자 plan + banned_at 조회
@@ -261,7 +292,12 @@ async function sendSMS(params: {
   const fromNumber = process.env.COOLSMS_FROM_NUMBER
 
   if (!apiKey || !apiSecret || !fromNumber) {
-    // API 키 미설정 시 Mock 응답 (개발/스테이징) — 전화번호 로그 금지
+    // 운영에서는 절대 성공으로 위장하지 않는다 (라우트 진입부에서 이미 503 으로
+    // 막히지만, 다른 호출 경로가 생겨도 fail-open 되지 않도록 여기서도 차단).
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error(SMS_NOT_CONFIGURED_MESSAGE)
+    }
+    // 비운영(개발/스테이징/테스트)에서만 Mock 응답 — 전화번호 로그 금지
     console.log('[CoolSMS Mock] SMS skipped — keys not configured')
     return { messageId: `mock-${Date.now()}` }
   }

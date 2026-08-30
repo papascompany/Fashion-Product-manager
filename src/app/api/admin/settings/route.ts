@@ -10,6 +10,10 @@ import { z } from 'zod'
 import { checkAdmin } from '@/lib/auth/admin-guard'
 import { getPlanResolutions, savePlanResolutions } from '@/lib/plan-settings'
 
+// Node Runtime — 단순 CRUD (admin 검증 + app_settings 조회/저장). 외부 API·AI 호출 없음.
+// 10s: Supabase 왕복 2회면 충분 (payments/prepare 와 동일 기준)
+export const maxDuration = 10
+
 const SettingsSchema = z.object({
   plan_resolution: z.object({
     free:     z.enum(['1K', '2K', '4K']),
