@@ -153,6 +153,21 @@ export async function PATCH(
 
     if (error) {
       console.error('[admin/users PATCH] update failed:', error)
+
+      // 마이그레이션 022 의 마지막 활성 관리자 보호 트리거에 막힌 경우.
+      // 앱의 자기 강등·자기 정지 가드는 단일 요청 안에서만 성립하고, 동시 요청으로
+      // 서로를 강등/정지하는 경합은 DB 트리거만 막을 수 있다(TOCTOU).
+      // 원문 Postgres 에러를 그대로 노출하지 않고 조치 가능한 메시지로 바꾼다.
+      if (error.message?.includes('LAST_ADMIN_PROTECTED')) {
+        return NextResponse.json(
+          {
+            error: '마지막 활성 관리자는 강등하거나 정지할 수 없습니다. 다른 관리자를 먼저 지정하세요.',
+            code: 'LAST_ADMIN_PROTECTED',
+          },
+          { status: 409 }
+        )
+      }
+
       // SEC-NEW-03: update 실패 → audit_log 기록 안 함.
       return NextResponse.json({ error: error.message }, { status: 500 })
     }
