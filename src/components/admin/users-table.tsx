@@ -35,6 +35,8 @@ export function UsersTable({ initial }: UsersTableProps) {
   const [showBanned, setShowBanned] = useState(false)
   const [busyId, setBusyId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  // 변경은 성공했으나 감사 기록(audit_log)에 실패한 경우의 경고 (200 응답에 실려 온다)
+  const [auditWarning, setAuditWarning] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
 
   const filtered = rows.filter((u) => {
@@ -65,7 +67,11 @@ export function UsersTable({ initial }: UsersTableProps) {
         const j = await res.json().catch(() => ({}))
         throw new Error(j.error ?? `HTTP ${res.status}`)
       }
-      const updated: AdminUserRow = await res.json()
+      const updated: AdminUserRow & { auditWarning?: string } = await res.json()
+      // 변경은 적용됐지만 감사 기록에 실패한 경우 — 서버가 auditWarning 을 실어 보낸다.
+      // 200 이라 에러 배너 경로를 타지 않으므로 여기서 별도 경고로 노출한다.
+      // (표시하지 않으면 감사 누락이 결국 조용히 묻혀 이 기능의 목적이 사라진다)
+      setAuditWarning(updated.auditWarning ?? null)
       // 낙관적 업데이트
       setRows((prev) => prev.map((r) => (r.id === userId ? { ...r, ...updated } : r)))
       return updated
@@ -123,6 +129,17 @@ export function UsersTable({ initial }: UsersTableProps) {
           {isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : '🔄 새로고침'}
         </button>
       </div>
+
+      {auditWarning && (
+        <div
+          className="p-3 text-[12px]"
+          role="status"
+          aria-live="polite"
+          style={{ color: '#b45309', backgroundColor: '#fff9e6', border: '1px solid #f5c430' }}
+        >
+          ⚠️ {auditWarning}
+        </div>
+      )}
 
       {error && (
         <div className="p-3 text-[12px]" style={{ color: '#d30005', backgroundColor: '#fff5f5', border: '1px solid #fecaca' }}>
