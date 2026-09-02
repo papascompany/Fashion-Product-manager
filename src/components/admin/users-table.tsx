@@ -65,7 +65,7 @@ export function UsersTable({ initial }: UsersTableProps) {
       })
       if (!res.ok) {
         const j = await res.json().catch(() => ({}))
-        throw new Error(j.error ?? `HTTP ${res.status}`)
+        throw new Error(extractErrorMessage(j.error) ?? `HTTP ${res.status}`)
       }
       const updated: AdminUserRow & { auditWarning?: string } = await res.json()
       // 변경은 적용됐지만 감사 기록에 실패한 경우 — 서버가 auditWarning 을 실어 보낸다.
@@ -331,4 +331,27 @@ function CreditAdjustor({
 
 function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString('ko-KR', { year: '2-digit', month: 'numeric', day: 'numeric' })
+}
+
+/**
+ * API 의 `error` 필드에서 사람이 읽을 문자열을 뽑는다.
+ * 대부분의 라우트는 문자열을 주지만, zod 400 은 `parsed.error.flatten()` 객체
+ * (`{ formErrors, fieldErrors }`)를 준다. 예전에는 이 객체를 그대로 Error 로
+ * 감싸 화면에 "[object Object]" 가 떴다. 두 형태를 모두 처리한다.
+ */
+function extractErrorMessage(error: unknown): string | null {
+  if (error == null) return null
+  if (typeof error === 'string') return error
+  if (typeof error === 'object') {
+    const flat = error as { formErrors?: string[]; fieldErrors?: Record<string, string[]> }
+    const parts: string[] = []
+    if (Array.isArray(flat.formErrors)) parts.push(...flat.formErrors)
+    if (flat.fieldErrors && typeof flat.fieldErrors === 'object') {
+      for (const [field, msgs] of Object.entries(flat.fieldErrors)) {
+        if (Array.isArray(msgs) && msgs.length) parts.push(`${field}: ${msgs.join(', ')}`)
+      }
+    }
+    if (parts.length) return parts.join(' · ')
+  }
+  return '요청이 거부되었습니다. (잘못된 입력)'
 }

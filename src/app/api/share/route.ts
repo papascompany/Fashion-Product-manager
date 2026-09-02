@@ -148,7 +148,31 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: '프로젝트를 찾을 수 없습니다.' }, { status: 404 })
     }
 
-    // ─── SMS 방식: 사전 검증 (banned + 일일 cap) ──────────────────────────
+    // ─── 정지 계정 게이트 (모든 공유 방식 공통) ───────────────────────────
+    // 예전에는 banned_at 검사가 SMS 분기 안에만 있어, link/kakao 공유는 정지된
+    // 계정도 shares 행을 만들어 공유 페이지를 게시할 수 있었다. shares insert 보다
+    // 먼저, 방식과 무관하게 정지 여부를 확인한다. (plan 은 SMS cap 계산에 재사용)
+    const { data: profile, error: profileError } = await supabase
+      .from('user_profiles')
+      .select('plan, banned_at')
+      .eq('id', user.id)
+      .single()
+
+    if (profileError || !profile) {
+      return NextResponse.json(
+        { error: '사용자 정보를 찾을 수 없습니다.' },
+        { status: 500 }
+      )
+    }
+
+    if ((profile as { banned_at: string | null }).banned_at) {
+      return NextResponse.json(
+        { error: '계정 사용이 정지되었습니다.' },
+        { status: 403 }
+      )
+    }
+
+    // ─── SMS 방식: 사전 검증 (일일 cap) ───────────────────────────────────
     if (method === 'sms') {
       if (!phone) {
         return NextResponse.json(
@@ -162,27 +186,6 @@ export async function POST(request: NextRequest) {
       if (process.env.NODE_ENV === 'production' && !isSmsConfigured()) {
         console.error('[/api/share] COOLSMS env not configured — SMS fail-closed')
         return NextResponse.json({ error: SMS_NOT_CONFIGURED_MESSAGE }, { status: 503 })
-      }
-
-      // 사용자 plan + banned_at 조회
-      const { data: profile, error: profileError } = await supabase
-        .from('user_profiles')
-        .select('plan, banned_at')
-        .eq('id', user.id)
-        .single()
-
-      if (profileError || !profile) {
-        return NextResponse.json(
-          { error: '사용자 정보를 찾을 수 없습니다.' },
-          { status: 500 }
-        )
-      }
-
-      if ((profile as { banned_at: string | null }).banned_at) {
-        return NextResponse.json(
-          { error: '계정 사용이 정지되었습니다.' },
-          { status: 403 }
-        )
       }
 
       const plan = (profile as { plan: Plan }).plan
