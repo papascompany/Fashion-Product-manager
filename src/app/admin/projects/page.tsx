@@ -5,6 +5,7 @@
 import Link from 'next/link'
 import Image from 'next/image'
 import { createAdminClient } from '@/lib/supabase/server'
+import { requireAdmin } from '@/lib/auth/admin-guard'
 import { ExternalLink, Zap, Wand2 } from 'lucide-react'
 
 interface SearchParams {
@@ -39,6 +40,10 @@ export default async function AdminProjectsPage({
 }: {
   searchParams: Promise<SearchParams>
 }) {
+  // 페이지 자체 인가 가드 — 레이아웃 + proxy.ts 미들웨어에 더한 심층방어
+  // (service_role 로 전체 사용자 프로젝트를 읽으므로 RLS 가 대신 막아주지 않는다).
+  await requireAdmin()
+
   const params = await searchParams
   const projects = await loadProjects(params)
 
