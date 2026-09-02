@@ -1,4 +1,5 @@
 import { createAdminClient } from '@/lib/supabase/server'
+import { requireAdmin } from '@/lib/auth/admin-guard'
 import { UsersTable } from '@/components/admin/users-table'
 
 interface SearchParams {
@@ -74,6 +75,10 @@ export default async function AdminUsersPage({
 }: {
   searchParams: Promise<SearchParams>
 }) {
+  // 페이지 자체 인가 가드 — 레이아웃(soft 네비게이션 시 미재실행) + proxy.ts
+  // 미들웨어에 더해, service_role 로 전체 사용자 PII 를 읽는 이 페이지의 심층방어.
+  await requireAdmin()
+
   const params = await searchParams
   const { rows: users, reachedAuthCap, authUsersCount } = await loadUsers(params)
 

@@ -5,6 +5,7 @@
  */
 
 import { createAdminClient } from '@/lib/supabase/server'
+import { requireAdmin } from '@/lib/auth/admin-guard'
 import { TrendingUp, Users, Sparkles, CreditCard, Activity, AlertTriangle } from 'lucide-react'
 import { getApiHealth } from '@/lib/api-balance'
 
@@ -92,6 +93,12 @@ async function loadRecentUsers(): Promise<RecentUser[]> {
 }
 
 export default async function AdminDashboard() {
+  // 페이지 자체 인가 가드 — 레이아웃 requireAdmin 에만 의존하지 않는다.
+  // App Router 에서 레이아웃은 soft(RSC) 네비게이션 시 재실행되지 않으므로,
+  // service_role 로 전체 사용자 데이터를 읽는 이 페이지는 스스로 검증해야 한다.
+  // (proxy.ts 미들웨어가 1차로 막지만, RLS 가 걷힌 페이지의 심층방어로 이중화)
+  await requireAdmin()
+
   const [statsResult, events, users] = await Promise.all([
     loadStats(),
     loadRecentEvents(),

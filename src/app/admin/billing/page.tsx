@@ -3,6 +3,7 @@
  */
 
 import { createAdminClient } from '@/lib/supabase/server'
+import { requireAdmin } from '@/lib/auth/admin-guard'
 import { TrendingUp, Users } from 'lucide-react'
 
 interface PaymentEvent {
@@ -55,6 +56,10 @@ async function loadPlanRevenue(): Promise<PlanRevenue[]> {
 }
 
 export default async function AdminBillingPage() {
+  // 페이지 자체 인가 가드 — 레이아웃 + proxy.ts 미들웨어에 더한 심층방어
+  // (service_role 로 전체 결제·매출 데이터를 읽으므로 RLS 가 대신 막아주지 않는다).
+  await requireAdmin()
+
   const [events, revenue] = await Promise.all([loadPaymentEvents(), loadPlanRevenue()])
 
   const mrr = revenue.reduce((sum, r) => sum + r.monthly, 0)
