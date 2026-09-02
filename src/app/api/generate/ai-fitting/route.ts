@@ -152,10 +152,36 @@ export async function POST(request: NextRequest) {
           persistedModelUrl = pub.publicUrl
           // user_profiles.last_model_image_url 갱신
           if (saveAsLastModel) {
-            await admin
+            // ⚠️ error 만 확인해서는 이 실패를 잡을 수 없다.
+            //    019 의 user_profiles_guard_columns 트리거는 신뢰되지 않은 호출자의
+            //    last_model_image_url 변경을 **에러 없이 NEW := OLD 로 되돌린다**.
+            //    즉 error 는 null 이고 영향 행 수도 1 이지만 값은 그대로다.
+            //    실제로 createAdminClient 가 service_role 이 아니던 시절
+            //    (createServerClient + cookies) 이 경로가 프로덕션에서 조용히 죽어
+            //    "지난 모델 사진 재사용" 기능이 한 번도 동작하지 않았다.
+            //    그래서 반환된 **값 자체**를 확인한다.
+            const { data: savedProfile, error: profileErr } = await admin
               .from('user_profiles')
               .update({ last_model_image_url: persistedModelUrl })
               .eq('id', user.id)
+              .select('last_model_image_url')
+              .maybeSingle()
+
+            if (profileErr || savedProfile?.last_model_image_url !== persistedModelUrl) {
+              // 생성 자체는 계속 진행한다(이 블록의 다른 실패와 동일한 graceful 정책).
+              // 다만 grep 가능한 단일 구조로 남겨 다시는 조용히 묻히지 않게 한다.
+              console.error(
+                '[ai-fitting] last_model_image_url 저장 실패 — 다음 생성에서 모델 사진 재사용이 동작하지 않는다',
+                JSON.stringify({
+                  userId: user.id,
+                  code: profileErr?.code ?? null,
+                  message: profileErr?.message ?? null,
+                  expected: persistedModelUrl,
+                  persisted: savedProfile?.last_model_image_url ?? null,
+                  rowFound: savedProfile !== null,
+                })
+              )
+            }
           }
         }
       } catch (storageErr) {
