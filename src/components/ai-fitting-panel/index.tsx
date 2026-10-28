@@ -92,12 +92,9 @@ export function AIFittingPanel(p: AIFittingPanelProps) {
   }, [p.productName, p.category, p.keywords])
 
   // UX-10 — 진행률 placeholder: 60~90s 동안 점진적 증가, 95% 에서 정체
+  // 시작값(8)·초기화(0)는 handleGenerate / handleCancel 이 설정한다 — effect 안 동기 setState 금지.
   useEffect(() => {
-    if (!generating) {
-      setProgress(0)
-      return
-    }
-    setProgress(8)
+    if (!generating) return
     const interval = setInterval(() => {
       setProgress((cur) => {
         // 95% 에서 정체 → 응답 받을 때까지 대기
@@ -169,6 +166,7 @@ export function AIFittingPanel(p: AIFittingPanelProps) {
     }
     setError(null)
     setGenerating(true)
+    setProgress(8)
     cancelledRef.current = false
     try {
       await p.onGenerate(Array.from(selectedRatios))
