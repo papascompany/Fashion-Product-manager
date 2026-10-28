@@ -17,6 +17,7 @@ import { useEffect, useRef, useState, useCallback } from 'react'
 import { Plus, GripVertical, MoreHorizontal, Trash2, Download, Save, ExternalLink, X, Loader2, Sparkles, Image as ImageIcon } from 'lucide-react'
 import { EditableText } from '@/components/editable-text'
 import { PointKeywords } from '@/components/point-keywords'
+import { DescriptionFlow, useDescriptionImages } from '@/components/description-flow'
 import { ShotOrchestrationPanel } from '@/components/detail-page-editor/shot-panel'
 import type { DetailSection, DetailSectionType, ShotSlot } from '@/store/studio'
 import { THEMES, DEFAULT_THEME, type ThemeId } from '@/lib/detail-page/themes'
@@ -125,6 +126,10 @@ export function DetailPageEditor({ sections, onChange, projectId, defaults }: De
   // 테마 선택 (조립/미리보기/내보내기 호출 시 themeId 전달)
   const [themeId, setThemeId] = useState<ThemeId>(DEFAULT_THEME)
 
+  // 문단 사이 사진 — 04 상세설명과 같은 배치를 첫 상품 소개 섹션에만 적용
+  const { slotsFor } = useDescriptionImages()
+  const primaryDescriptionId = sections.find((s) => s.type === 'description')?.id
+
   // opt-in 이미지 내보내기 (래스터화) — 자동 아님, 버튼 클릭 시에만
   const previewFrameRef = useRef<HTMLIFrameElement | null>(null)
   const [rasterPreset, setRasterPreset] = useState<PlatformPreset>(PLATFORM_PRESETS[0])
@@ -229,7 +234,11 @@ export function DetailPageEditor({ sections, onChange, projectId, defaults }: De
           keywords: extractArr(sections, 'keywords', 'items')   ?? defaults?.keywords ?? [],
           features: extractArr(sections, 'features', 'items')   ?? defaults?.features ?? [],
           themeId,
-          sections,
+          sections: sections.map((s) => {
+            if (s.type !== 'description' || s.id !== primaryDescriptionId) return s
+            const images = slotsFor(s.content)
+            return images.some(Boolean) ? { ...s, images } : s
+          }),
         }),
       })
       if (!res.ok) throw new Error(`내보내기 실패 (${res.status})`)
@@ -309,6 +318,7 @@ export function DetailPageEditor({ sections, onChange, projectId, defaults }: De
               section={section}
               index={index}
               pointKeywords={defaults?.pointKeywords}
+              withDescriptionImages={section.id === primaryDescriptionId}
               isDragging={dragIndex === index}
               isDragTarget={hoverIndex === index && dragIndex !== null}
               onDragStart={() => setDragIndex(index)}
@@ -566,6 +576,8 @@ interface SectionWrapperProps {
   index: number
   /** hero 본문에 표시할 포인트 키워드 (display-only) */
   pointKeywords?: string[]
+  /** 첫 상품 소개 섹션이면 문단 사이 사진 표시 */
+  withDescriptionImages: boolean
   isDragging: boolean
   isDragTarget: boolean
   onDragStart: () => void
@@ -638,7 +650,12 @@ function SectionWrapper(p: SectionWrapperProps) {
       </div>
 
       {/* 본문 — 타입별 렌더링 */}
-      <SectionBody section={p.section} onUpdate={p.onUpdate} pointKeywords={p.pointKeywords} />
+      <SectionBody
+        section={p.section}
+        onUpdate={p.onUpdate}
+        pointKeywords={p.pointKeywords}
+        withDescriptionImages={p.withDescriptionImages}
+      />
     </div>
   )
 }
@@ -649,11 +666,13 @@ function SectionBody({
   section,
   onUpdate,
   pointKeywords,
+  withDescriptionImages,
 }: {
   section: DetailSection
   onUpdate: (patch: Partial<DetailSection>) => void
   /** hero 본문에 표시할 포인트 키워드 (display-only) */
   pointKeywords?: string[]
+  withDescriptionImages: boolean
 }) {
   switch (section.type) {
     case 'hero':
@@ -752,14 +771,12 @@ function SectionBody({
 
     case 'description':
       return (
-        <EditableText
-          value={section.content}
-          onSave={(v) => onUpdate({ content: v } as Partial<DetailSection>)}
-          multiline
+        <DescriptionFlow
+          text={section.content}
+          onChangeText={(v) => onUpdate({ content: v } as Partial<DetailSection>)}
           maxLength={2000}
-          className="text-[13px] text-[#111111] leading-relaxed whitespace-pre-wrap block"
           placeholder="상품 소개 내용"
-          showEditIcon={false}
+          withImages={withDescriptionImages}
         />
       )
 

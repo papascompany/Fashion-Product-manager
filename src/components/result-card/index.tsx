@@ -11,7 +11,10 @@ import { EditableText } from '@/components/editable-text'
 import { RegenerateMenu } from '@/components/regenerate-menu'
 import { VariantsTray } from '@/components/variants-tray'
 import { PointKeywords } from '@/components/point-keywords'
-import type { GenerationResult, DetailSection, SectionKind } from '@/store/studio'
+import { DescriptionFlow } from '@/components/description-flow'
+import type { GenerationResult, DetailSection, SectionKind, AiFittingItem, VariantKind } from '@/store/studio'
+// 타입 전용 — dynamic import 로 분리된 패널 코드를 초기 번들에 끌어오지 않는다
+import type { FittingVariantView, VariantStatusCallback } from '@/components/ai-fitting-panel'
 
 // buildDefaultSections은 순수 함수 → 동기 import (번들 크기 미미)
 import { buildDefaultSections } from '@/components/detail-page-editor'
@@ -83,7 +86,12 @@ interface ResultCardProps {
   onChangeDetailSections?: (sections: DetailSection[]) => void
 
   // Phase 4 — AI Fitting (Studio 모드 한정)
-  productImageUrl?: string | null
+  /** 원본 + 색상·디자인 변형 (원본이 첫 번째) */
+  fittingVariants?: FittingVariantView[]
+  onAddProductVariant?: (file: File) => Promise<void>
+  onUpdateProductVariant?: (id: string, patch: { label?: string; kind?: VariantKind }) => void
+  onRemoveProductVariant?: (id: string) => void
+  onCancelAIFitting?: () => void
   lastModelImageUrl?: string | null
   currentModelBase64?: string | null
   currentModelUrl?: string | null
@@ -91,8 +99,12 @@ interface ResultCardProps {
   onToggleReuseModel?: () => void
   onModelUpload?: (base64: string) => void
   onModelClear?: () => void
-  onGenerateAIFitting?: (aspectRatios: string[]) => Promise<void>
-  aiFittings?: Array<{ url: string; aspectRatio: string; width: number; height: number; modelImageUrl?: string | null }>
+  onGenerateAIFitting?: (
+    aspectRatios: string[],
+    variantIds: string[],
+    onStatus: VariantStatusCallback,
+  ) => Promise<void>
+  aiFittings?: AiFittingItem[]
   selectedFittingUrl?: string | null
   onSelectFittingHero?: (url: string) => void
 }
@@ -124,7 +136,11 @@ export function ResultCard({
   onRerollThumbnails,
   detailPageSections,
   onChangeDetailSections,
-  productImageUrl,
+  fittingVariants,
+  onAddProductVariant,
+  onUpdateProductVariant,
+  onRemoveProductVariant,
+  onCancelAIFitting,
   lastModelImageUrl,
   currentModelBase64,
   currentModelUrl,
@@ -325,7 +341,15 @@ export function ResultCard({
         )}
 
         <AIFittingPanel
-          productImageUrl={productImageUrl ?? null}
+          variants={fittingVariants ?? []}
+          onAddVariant={
+            mode === 'quick'
+              ? async () => { setShowQuickCta(true) }
+              : (onAddProductVariant ?? (async () => {}))
+          }
+          onUpdateVariant={onUpdateProductVariant ?? (() => {})}
+          onRemoveVariant={onRemoveProductVariant ?? (() => {})}
+          onCancel={onCancelAIFitting}
           lastModelImageUrl={lastModelImageUrl ?? null}
           currentModelBase64={currentModelBase64 ?? null}
           currentModelUrl={currentModelUrl ?? null}
@@ -524,21 +548,13 @@ export function ResultCard({
           className="p-6 relative group"
           style={{ border: '1px solid #e5e5e5', backgroundColor: '#ffffff' }}
         >
-          {onEditDescription ? (
-            <EditableText
-              value={result.description}
-              onSave={onEditDescription}
-              multiline
-              maxLength={800}
-              className="text-[13px] text-[#111111] leading-relaxed whitespace-pre-wrap block"
-              placeholder="상세 설명을 입력하세요"
-              showEditIcon={false}
-            />
-          ) : (
-            <pre className="text-[13px] text-[#111111] leading-relaxed whitespace-pre-wrap font-sans">
-              {result.description}
-            </pre>
-          )}
+          <DescriptionFlow
+            text={result.description}
+            onChangeText={onEditDescription}
+            maxLength={800}
+            placeholder="상세 설명을 입력하세요"
+            withImages={mode === 'studio'}
+          />
           <button
             onClick={() => copyToClipboard(result.description, 'description')}
             className="absolute top-4 right-4 opacity-0 group-hover:opacity-100 transition-opacity p-1.5 hover:bg-[#f5f5f5] text-[#9e9ea0] hover:text-[#111111]"
@@ -571,6 +587,7 @@ export function ResultCard({
             pinnedAspectRatios={pinnedAspectRatios}
             onTogglePin={onTogglePin}
             onReroll={onRerollThumbnails}
+            downloadBaseName={selectedName}
           />
         </section>
       )}

@@ -59,6 +59,8 @@ const FittingSchema = z.object({
   shotVariant: z.enum(['front', 'side', 'back', 'lifestyle']).optional(),
   /** 컷 간 일관성 lock seed — 전달 시 모델 프로필 락 가드레일도 함께 활성화 */
   lockSeed: z.number().int().min(0).max(2_147_483_647).optional(),
+  /** 색상·디자인 변형 이름 — 사용 기록(metadata) 전용, 프롬프트에는 넣지 않는다 */
+  variantLabel: z.string().trim().max(40).optional(),
 })
 
 // ─── 핸들러 ─────────────────────────────────────────────────────────────────
@@ -84,7 +86,7 @@ export async function POST(request: NextRequest) {
       aspectRatios,
       category, productKeyFeatures,
       refinement, saveAsLastModel,
-      shotVariant, lockSeed,
+      shotVariant, lockSeed, variantLabel,
     } = parsed.data
 
     // 제품/모델 이미지 모두 있어야 함
@@ -130,6 +132,7 @@ export async function POST(request: NextRequest) {
       mode: 'fitting',
       aspectRatios,
       requiredCredits,
+      variantLabel,
     })
 
     // ── 모델 이미지를 Storage 에 업로드 (base64 일 때만) ─────────────────
@@ -265,6 +268,7 @@ export async function POST(request: NextRequest) {
           resolution,
           elapsedMs: elapsed,
           requestId: genResult.requestId,
+          ...(variantLabel ? { variantLabel } : {}),
         },
       }
     )
