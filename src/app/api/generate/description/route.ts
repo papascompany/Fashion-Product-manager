@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/server'
 import { generateDescription } from '@/lib/ai/generators/description-agent'
 import { UserIntentSchema } from '@/lib/ai/types'
 import { checkCreditGuard, deductCredits } from '@/lib/credit-guard'
+import { reportProviderFailure } from '@/lib/api-balance'
 
 export const runtime = 'edge'
 export const dynamic = 'force-dynamic'
@@ -71,6 +72,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(result)
   } catch (err) {
     console.error('[/api/generate/description]', err)
+    // 운영 알람 — 잔액소진/인증실패만 Slack+email 자동 발송(fire-and-forget).
+    reportProviderFailure(err, { task: 'description' })
     return NextResponse.json({ error: '상세설명 생성 중 오류가 발생했습니다.' }, { status: 500 })
   }
 }

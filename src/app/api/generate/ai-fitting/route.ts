@@ -24,7 +24,8 @@ import type { AspectRatio, Resolution } from '@/lib/ai/image/types'
 import { getResolutionForPlan } from '@/lib/plan-settings'
 import type { Plan } from '@/lib/plan-settings'
 import { isSafeImageUrl, MAX_BASE64_LENGTH, extractSafeMimeType } from '@/lib/security'
-import { flattenErrorChain } from '@/lib/api-balance'
+import { flattenErrorChain, reportProviderFailure } from '@/lib/api-balance'
+import { logEvent } from '@/lib/analytics'
 
 // Node Runtime — Storage 업로드 + Google SDK
 // 120s: 참조이미지 fetch(20s) + 3비율 병렬 Gemini(65s) + Storage업로드·DB기록(35s) 여유
@@ -121,6 +122,15 @@ export async function POST(request: NextRequest) {
         { status: 402 }
       )
     }
+
+    // 분석/추적용 — fitting 시도. 성공은 RPC 의 usage_events 가 'fitting_generated' 로 기록.
+    void logEvent('generation_started', {
+      userId: user.id,
+      projectId,
+      mode: 'fitting',
+      aspectRatios,
+      requiredCredits,
+    })
 
     // ── 모델 이미지를 Storage 에 업로드 (base64 일 때만) ─────────────────
     // 이미 URL 인 경우 재사용이므로 다시 업로드 안 함.
@@ -277,6 +287,8 @@ export async function POST(request: NextRequest) {
     })
   } catch (err) {
     console.error('[/api/generate/ai-fitting]', err)
+    // 운영 알람 — 잔액소진/인증실패만 Slack+email 자동 발송(fire-and-forget).
+    reportProviderFailure(err, { task: 'ai-fitting', provider: 'google' })
     const message = err instanceof Error ? err.message : '알 수 없는 오류'
     // 썸네일 라우트와 동일 이유 — provider 가 전부 실패를 고정 문구로 감싸므로
     // message 만으로는 결제/쿼터/타임아웃을 구분할 수 없다. 분류는 cause 체인으로.
