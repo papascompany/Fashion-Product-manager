@@ -115,6 +115,8 @@ export function HistoryClient({ projects: initialProjects, fittings = [], plan =
       day: 'numeric',
       hour: '2-digit',
       minute: '2-digit',
+      // 첫 HTML 은 서버(UTC)에서 렌더된다 — 시간대를 고정해야 브라우저와 문자열이 같아져 하이드레이션 불일치(#418)가 안 난다
+      timeZone: 'Asia/Seoul',
     })
   }
 
