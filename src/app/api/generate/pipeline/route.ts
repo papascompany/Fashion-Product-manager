@@ -31,6 +31,8 @@ import {
   MAX_BASE64_LENGTH,
   sanitizeErrorMessage,
 } from '@/lib/security'
+import { reportProviderFailure } from '@/lib/api-balance'
+import { logEvent } from '@/lib/analytics'
 
 // ─── 런타임 설정 ────────────────────────────────────────────────────────────
 
@@ -139,6 +141,13 @@ export async function POST(request: NextRequest) {
         const projectId = project.id as string
         createdProjectId = projectId
         emit({ type: 'project', projectId })
+
+        // 분석/추적용 — generation_started 는 크레딧 차감과 별개 (RPC 가 넣는 quick/studio_generated 와 구분).
+        void logEvent('generation_started', {
+          userId: user.id,
+          projectId,
+          mode,
+        })
 
         // ── Step 2: analyze ────────────────────────────────────────────────
         currentStep = 'analyze'
@@ -276,6 +285,10 @@ export async function POST(request: NextRequest) {
         controller.close()
       } catch (err) {
         console.error(`[/api/generate/pipeline] stream error at step=${currentStep}`, err)
+
+        // 운영 알람 — 심각 장애(잔액소진/인증실패)만 Slack+email 자동 발송.
+        // reportProviderFailure 내부에서 fire-and-forget 호출.
+        reportProviderFailure(err, { task: `pipeline:${currentStep ?? 'unknown'}` })
 
         // BIZ-12 — 부분 실패 시 projects.status='failed' 로 업데이트.
         // (성공 경로에서 status='done' 으로 업데이트하므로 catch 만 'failed' 처리.)

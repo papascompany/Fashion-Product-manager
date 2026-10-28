@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback, useEffect, useRef, Suspense, memo } from 'react'
+import { useState, useCallback, useEffect, useMemo, useRef, Suspense, memo } from 'react'
 import Image from 'next/image'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { Sparkles, Loader2, AlertCircle, X } from 'lucide-react'
@@ -17,12 +17,20 @@ import {
   useStudioStore,
   selectIsGenerating,
   selectStatusLabel,
+  ORIGINAL_VARIANT_ID,
   type StudioMode,
   type GenerationResult,
   type DetailSection,
+  type AiFittingItem,
+  type VariantKind,
 } from '@/store/studio'
 import type { CreditGuardResult } from '@/lib/credit-guard'
 import { consumePipelineSSE } from '@/lib/ai/sse-client'
+import { runPool } from '@/lib/run-pool'
+import type { FittingVariantView, VariantStatusCallback } from '@/components/ai-fitting-panel'
+
+// 변형별 AI Fitting 동시 요청 수 — 요청당 비율 수만큼 Gemini 호출이 병렬로 나간다
+const FITTING_CONCURRENCY = 2
 
 // ─── 진행률 매핑 ─────────────────────────────────────────────────────────
 
@@ -560,102 +568,169 @@ function StudioPageInner() {
     await Promise.all(tasks)
   }, [handleRegenerateNaming, handleRegenerateTagline, handleRegenerateDescription])
 
-  // ─── Phase 4 — AI Fitting 핸들러 ────────────────────────────────────────
-  const handleAIFitting = useCallback(async (aspectRatios: string[]) => {
+  // ─── Phase 4 — AI Fitting: 색상·디자인 변형별 배치 합성 ─────────────────
+  const fittingVariants = useMemo<FittingVariantView[]>(() => [
+    {
+      id: ORIGINAL_VARIANT_ID,
+      label: store.originalVariantLabel,
+      kind: null,
+      imageUrl: store.uploadedImageUrl,
+      isOriginal: true,
+    },
+    ...store.productVariants.map((v) => ({
+      id: v.id,
+      label: v.label,
+      kind: v.kind,
+      imageUrl: v.imageUrl,
+      isOriginal: false,
+    })),
+  ], [store.originalVariantLabel, store.uploadedImageUrl, store.productVariants])
+
+  const handleAddProductVariant = useCallback(async (file: File) => {
+    const form = new FormData()
+    form.append('file', file)
+    const res = await fetch('/api/upload', { method: 'POST', body: form })
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok || typeof data.url !== 'string') {
+      throw new Error(data.error ?? '변형 사진 업로드에 실패했습니다.')
+    }
+    const nextIndex = useStudioStore.getState().productVariants.length + 1
+    store.addProductVariant({
+      id: `v_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+      label: `변형 ${nextIndex}`,
+      kind: 'color',
+      imageUrl: data.url,
+    })
+  }, [store])
+
+  const handleUpdateProductVariant = useCallback((id: string, patch: { label?: string; kind?: VariantKind }) => {
+    if (id === ORIGINAL_VARIANT_ID) {
+      if (patch.label !== undefined) store.setOriginalVariantLabel(patch.label)
+      return
+    }
+    store.updateProductVariant(id, patch)
+  }, [store])
+
+  const handleCancelAIFitting = useCallback(() => {
+    aiFittingControllerRef.current?.abort()
+  }, [])
+
+  const handleAIFitting = useCallback(async (
+    aspectRatios: string[],
+    variantIds: string[],
+    onStatus: VariantStatusCallback,
+  ) => {
     if (!store.projectId || !store.result) throw new Error('프로젝트가 없습니다.')
-    if (!aspectRatios || aspectRatios.length === 0) throw new Error('비율을 선택해주세요.')
+    if (aspectRatios.length === 0) throw new Error('비율을 선택해주세요.')
 
-    // 모델 이미지 결정 우선순위:
-    // 1. 막 업로드한 base64 (store.modelImageBase64)
-    // 2. 현재 store 의 url
-    // 3. 마지막 모델 URL (reuseLastModel = true 일 때)
-    const useBase64 = store.modelImageBase64
-    const useUrl = store.modelImageUrl ?? (store.reuseLastModel ? lastModelImageUrl : null)
-    if (!useBase64 && !useUrl) throw new Error('모델 사진을 먼저 업로드해주세요.')
+    // 제품 이미지는 Storage URL 만 전송 (base64 는 요청이 10MB+ 가 되어 타임아웃 유발)
+    const targets = fittingVariants.filter((v) => variantIds.includes(v.id) && v.imageUrl)
+    if (targets.length === 0) throw new Error('합성할 제품 사진이 없습니다.')
 
-    // 제품 이미지는 항상 Supabase Storage URL 사용 (이미 업로드 완료 상태).
-    // base64 를 그대로 전송하면 요청 바디가 최대 10MB+ 가 되어 전송 지연 + 타임아웃 유발.
-    // 서버에서 URL 을 한 번만 fetch 하는 것이 훨씬 효율적.
-    const productUrl = store.uploadedImageUrl ?? null
-    if (!productUrl) throw new Error('원본 제품 이미지가 없습니다.')
+    // 모델: 막 올린 base64 > store URL > 직전 모델(재사용 선택 시)
+    const modelBase64 = store.modelImageBase64
+    let modelUrl = modelBase64 ? null : (store.modelImageUrl ?? (store.reuseLastModel ? lastModelImageUrl : null))
+    if (!modelBase64 && !modelUrl) throw new Error('모델 사진을 먼저 업로드해주세요.')
 
-    // RACE-03 — 직전 진행 중인 controller 가 있으면 abort, 응답 처리 전 projectId 캡처/비교
+    // RACE-03 — 직전 요청 abort, 응답마다 projectId 재확인
     aiFittingControllerRef.current?.abort()
     const controller = new AbortController()
     aiFittingControllerRef.current = controller
     const requestProjectId = store.projectId
+    const isStale = () =>
+      controller.signal.aborted || useStudioStore.getState().projectId !== requestProjectId
 
-    let res: Response
-    try {
-      res = await fetch('/api/generate/ai-fitting', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          projectId: requestProjectId,
-          // 제품 이미지: URL 전용 (base64 전송 금지 — 요청 크기 최소화)
-          productImageUrl: productUrl,
-          // 모델 이미지: 새 업로드 시 base64, 재사용 시 URL
-          modelImageBase64: useBase64 ?? undefined,
-          modelImageUrl: !useBase64 ? useUrl : undefined,
-          aspectRatios,  // D안: 사용자가 선택한 비율만
-          resolution: store.thumbnailResolution,
-          category: effectiveAnalysis.category ?? '패션 아이템',
-          productKeyFeatures: effectiveAnalysis.keyFeatures ?? [],
-          saveAsLastModel: !!useBase64,  // base64 로 새로 올린 경우만 last_model 갱신
-        }),
-        signal: controller.signal,
-      })
-    } catch (fetchErr) {
-      if (controller.signal.aborted) {
-        // 의도적 취소 — 조용히 종료
+    // 변형이 여럿이면 같은 seed + 모델 프로필 락으로 얼굴·체형을 맞춘다
+    const lockSeed = targets.length > 1 ? store.ensureShotLockSeed() : undefined
+    const started = new Set<string>()
+    let creditStop = false
+
+    const runOne = async (variant: FittingVariantView): Promise<void> => {
+      started.add(variant.id)
+      const label = variant.label.trim() || (variant.isOriginal ? '기본' : '변형')
+      onStatus(variant.id, { state: 'running' })
+
+      let res: Response
+      try {
+        res = await fetch('/api/generate/ai-fitting', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            projectId: requestProjectId,
+            productImageUrl: variant.imageUrl,
+            modelImageBase64: modelUrl ? undefined : (modelBase64 ?? undefined),
+            modelImageUrl: modelUrl ?? undefined,
+            aspectRatios,
+            resolution: store.thumbnailResolution,
+            category: effectiveAnalysis.category ?? '패션 아이템',
+            productKeyFeatures: effectiveAnalysis.keyFeatures ?? [],
+            // base64 로 새로 올린 첫 요청에서만 last_model 갱신
+            saveAsLastModel: !modelUrl && !!modelBase64,
+            lockSeed,
+            variantLabel: label,
+          }),
+          signal: controller.signal,
+        })
+      } catch {
+        if (!controller.signal.aborted) onStatus(variant.id, { state: 'failed', message: '네트워크 오류' })
         return
       }
-      throw fetchErr
+      if (isStale()) return
+
+      if (res.status === 402) {
+        creditStop = true
+        const err = await res.json().catch(() => ({}))
+        const gr = err.guardResult as CreditGuardResult | undefined
+        if (gr) {
+          setGuardModal({
+            open: true,
+            result: gr,
+            reason: gr.reason?.includes('Pro') ? 'plan_required' : 'insufficient_credits',
+          })
+        }
+        onStatus(variant.id, { state: 'failed', message: '크레딧 부족' })
+        return
+      }
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        onStatus(variant.id, { state: 'failed', message: err.error ?? 'AI Fitting 실패' })
+        return
+      }
+
+      const data = await res.json()
+      if (isStale()) return
+
+      const items: AiFittingItem[] = (data.fittings ?? []).map((f: { result_url?: string; url?: string; aspect_ratio?: string; aspectRatio?: string; width: number; height: number; model_image_url?: string | null }) => ({
+        url: f.result_url ?? f.url ?? '',
+        aspectRatio: f.aspect_ratio ?? f.aspectRatio ?? '1:1',
+        width: f.width,
+        height: f.height,
+        modelImageUrl: f.model_image_url ?? null,
+        variantId: variant.id,
+        variantLabel: label,
+      }))
+      store.replaceVariantFittings(variant.id, items)
+
+      if (data.modelImageUrl) {
+        // 이후 변형은 저장된 모델 URL 재사용 — base64 를 변형마다 다시 올리지 않는다
+        modelUrl = data.modelImageUrl
+        setLastModelImageUrl(data.modelImageUrl)
+        store.setModelImage(data.modelImageUrl, null)
+      }
+      onStatus(variant.id, { state: 'done', count: items.length })
     }
 
-    // 응답 처리 직전 projectId 가드 — store.reset 으로 프로젝트가 바뀌었다면 무시
-    if (useStudioStore.getState().projectId !== requestProjectId) {
-      return
-    }
+    const queue = [...targets]
+    // 새 모델(base64)이면 첫 변형으로 모델을 Storage 에 올린 뒤 나머지를 병렬 실행
+    if (!modelUrl && queue.length > 1) await runOne(queue.shift()!)
+    await runPool(queue, FITTING_CONCURRENCY, runOne, () => creditStop || isStale())
 
-    if (res.status === 402) {
-      const err = await res.json()
-      const gr = err.guardResult as CreditGuardResult
-      setGuardModal({
-        open: true,
-        result: gr,
-        reason: gr?.reason?.includes('Pro') ? 'plan_required' : 'insufficient_credits',
-      })
-      return
+    if (isStale()) return
+    for (const v of targets) {
+      if (!started.has(v.id)) onStatus(v.id, { state: 'failed', message: '크레딧 부족으로 중단' })
     }
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({ error: 'AI Fitting 실패' }))
-      throw new Error(err.error ?? 'AI Fitting 실패')
-    }
-    const data = await res.json()
-
-    // 응답 파싱 직후 한 번 더 projectId 가드
-    if (useStudioStore.getState().projectId !== requestProjectId) {
-      return
-    }
-
-    // fittings 적용
-    const items = (data.fittings ?? []).map((f: { result_url?: string; url?: string; aspect_ratio?: string; aspectRatio?: string; width: number; height: number; model_image_url?: string | null }) => ({
-      url: f.result_url ?? f.url ?? '',
-      aspectRatio: f.aspect_ratio ?? f.aspectRatio ?? '1:1',
-      width: f.width,
-      height: f.height,
-      modelImageUrl: f.model_image_url ?? null,
-    }))
-    store.setAiFittings(items)
-    // 마지막 모델 URL 갱신 (재사용 가능)
-    if (data.modelImageUrl) {
-      setLastModelImageUrl(data.modelImageUrl)
-      store.setModelImage(data.modelImageUrl, null)
-    }
-    // analytics: fitting_created 는 server-side ai-fitting/route.ts 에서 기록
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [store.projectId, store.result, store.modelImageBase64, store.modelImageUrl, store.reuseLastModel, store.uploadedImageBase64, store.uploadedImageUrl, store.thumbnailResolution, lastModelImageUrl, effectiveAnalysis])
+    // analytics: 변형별 generation_started / fitting_generated 는 server-side ai-fitting/route.ts 에서 기록
+  }, [store, fittingVariants, lastModelImageUrl, effectiveAnalysis])
 
   // Phase 2 — 썸네일 핀 재롤
   const handleRerollThumbnails = useCallback(async (refinement: string) => {
@@ -814,8 +889,12 @@ function StudioPageInner() {
               detailPageSections={store.detailPageSections}
               onChangeDetailSections={store.setDetailPageSections}
 
-              // Phase 4 — AI Fitting
-              productImageUrl={store.uploadedImageUrl}
+              // Phase 4 — AI Fitting (색상·디자인 변형별)
+              fittingVariants={fittingVariants}
+              onAddProductVariant={handleAddProductVariant}
+              onUpdateProductVariant={handleUpdateProductVariant}
+              onRemoveProductVariant={store.removeProductVariant}
+              onCancelAIFitting={handleCancelAIFitting}
               lastModelImageUrl={lastModelImageUrl}
               currentModelBase64={store.modelImageBase64}
               currentModelUrl={store.modelImageUrl}

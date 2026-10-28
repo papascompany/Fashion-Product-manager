@@ -24,7 +24,8 @@ import type { AspectRatio, Resolution } from '@/lib/ai/image/types'
 import { getResolutionForPlan } from '@/lib/plan-settings'
 import type { Plan } from '@/lib/plan-settings'
 import { isSafeImageUrl, MAX_BASE64_LENGTH, extractSafeMimeType } from '@/lib/security'
-import { flattenErrorChain } from '@/lib/api-balance'
+import { flattenErrorChain, reportProviderFailure } from '@/lib/api-balance'
+import { logEvent } from '@/lib/analytics'
 
 // Node Runtime — Storage 업로드 + Google SDK
 // 120s: 참조이미지 fetch(20s) + 3비율 병렬 Gemini(65s) + Storage업로드·DB기록(35s) 여유
@@ -58,6 +59,8 @@ const FittingSchema = z.object({
   shotVariant: z.enum(['front', 'side', 'back', 'lifestyle']).optional(),
   /** 컷 간 일관성 lock seed — 전달 시 모델 프로필 락 가드레일도 함께 활성화 */
   lockSeed: z.number().int().min(0).max(2_147_483_647).optional(),
+  /** 색상·디자인 변형 이름 — 사용 기록(metadata) 전용, 프롬프트에는 넣지 않는다 */
+  variantLabel: z.string().trim().max(40).optional(),
 })
 
 // ─── 핸들러 ─────────────────────────────────────────────────────────────────
@@ -83,7 +86,7 @@ export async function POST(request: NextRequest) {
       aspectRatios,
       category, productKeyFeatures,
       refinement, saveAsLastModel,
-      shotVariant, lockSeed,
+      shotVariant, lockSeed, variantLabel,
     } = parsed.data
 
     // 제품/모델 이미지 모두 있어야 함
@@ -121,6 +124,16 @@ export async function POST(request: NextRequest) {
         { status: 402 }
       )
     }
+
+    // 분석/추적용 — fitting 시도. 성공은 RPC 의 usage_events 가 'fitting_generated' 로 기록.
+    void logEvent('generation_started', {
+      userId: user.id,
+      projectId,
+      mode: 'fitting',
+      aspectRatios,
+      requiredCredits,
+      variantLabel,
+    })
 
     // ── 모델 이미지를 Storage 에 업로드 (base64 일 때만) ─────────────────
     // 이미 URL 인 경우 재사용이므로 다시 업로드 안 함.
@@ -255,6 +268,7 @@ export async function POST(request: NextRequest) {
           resolution,
           elapsedMs: elapsed,
           requestId: genResult.requestId,
+          ...(variantLabel ? { variantLabel } : {}),
         },
       }
     )
@@ -277,6 +291,8 @@ export async function POST(request: NextRequest) {
     })
   } catch (err) {
     console.error('[/api/generate/ai-fitting]', err)
+    // 운영 알람 — 잔액소진/인증실패만 Slack+email 자동 발송(fire-and-forget).
+    reportProviderFailure(err, { task: 'ai-fitting', provider: 'google' })
     const message = err instanceof Error ? err.message : '알 수 없는 오류'
     // 썸네일 라우트와 동일 이유 — provider 가 전부 실패를 고정 문구로 감싸므로
     // message 만으로는 결제/쿼터/타임아웃을 구분할 수 없다. 분류는 cause 체인으로.

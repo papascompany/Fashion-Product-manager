@@ -151,7 +151,7 @@ export function classifyProviderError(err: unknown): ProviderErrorClassification
   }
 }
 
-// ─── 장애 보고 (구조화 로그) ─────────────────────────────────────────────────
+// ─── 장애 보고 (구조화 로그 + 운영 알람) ──────────────────────────────────────
 
 /**
  * 마지막으로 분류된 장애(프로세스 인메모리). 다중 인스턴스/콜드스타트에서는
@@ -165,7 +165,9 @@ let lastIncident: (ProviderErrorClassification & { task?: string; at: string }) 
  *  `console.warn('[api-balance]', '{"status":...,"provider":...,"task":...,"message":...}')`
  * 형태라 추후 grep / 로그 기반 알람을 걸기 쉽다.
  *
- * 외부 알림 채널(Slack/SMS/email)은 의도적으로 연결하지 않는다 — decisionsNeeded 참고.
+ * `SLACK_ALERT_WEBHOOK_URL` 또는 `RESEND_API_KEY` 가 설정돼 있고 분류 상태가
+ * `quota_exhausted` / `auth_invalid` 이면 운영 알람(Slack + email)도 자동 발송된다.
+ * 알람은 fire-and-forget — 호출자 응답을 블로킹하지 않는다.
  *
  * @returns 분류 결과 (호출자가 사용자 메시지 변환 등에 재사용 가능).
  */
@@ -188,6 +190,12 @@ export function reportProviderFailure(
       message: result.message,
     })
   )
+
+  // 운영 알람 — fire-and-forget, never throws (alerts.ts 내부에서 catch).
+  // dynamic import 로 Edge 번들 경량화 + 'server-only' 가드를 통과.
+  void import('./alerts')
+    .then((m) => m.sendProviderAlert(result, ctx.task))
+    .catch((e) => console.warn('[api-balance] alert dispatch failed (ignored):', e))
 
   return result
 }

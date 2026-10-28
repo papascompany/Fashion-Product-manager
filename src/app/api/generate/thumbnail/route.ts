@@ -22,7 +22,8 @@ import { setImageProvider, getImageProvider } from '@/lib/ai/client'
 import type { AspectRatio, Resolution } from '@/lib/ai/image/types'
 import { getResolutionForPlan } from '@/lib/plan-settings'
 import type { Plan } from '@/lib/plan-settings'
-import { flattenErrorChain } from '@/lib/api-balance'
+import { flattenErrorChain, reportProviderFailure } from '@/lib/api-balance'
+import { logEvent } from '@/lib/analytics'
 
 // Node Runtime — Storage 업로드 + Google SDK
 // 180s: 참조이미지 사전 해상(20s) + 비율별 fallback fetch(15s) + Gemini(65s, 전 비율 병렬)
@@ -173,6 +174,15 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // 분석/추적 — 썸네일 시도. 성공은 record_thumbnail_generation RPC 가 usage_events 로 기록.
+    void logEvent('generation_started', {
+      userId: user.id,
+      projectId,
+      mode: 'thumbnail',
+      expectedImages,
+      dynamicCredits,
+    })
+
     // ─── 이미지 프로바이더 초기화 ─────────────────────────────────────────
     try {
       getImageProvider()
@@ -288,6 +298,8 @@ export async function POST(request: NextRequest) {
     })
   } catch (err) {
     console.error('[/api/generate/thumbnail]', err)
+    // 운영 알람 — 잔액소진/인증실패만 Slack+email 자동 발송(fire-and-forget).
+    reportProviderFailure(err, { task: 'thumbnail', provider: 'google' })
     const message = err instanceof Error ? err.message : '썸네일 생성 중 오류'
     // 분류는 cause 체인까지 펼친 문자열로 한다 — provider 가 전부 실패를 고정 문구로
     // 감싸므로 message 만 보면 결제/쿼터 오류를 영영 못 잡는다(일반 500 으로 노출됨).

@@ -2,6 +2,35 @@
 import { create } from 'zustand'
 import type { UserIntent } from '@/lib/ai/types'
 import type { ReferenceAnchors } from '@/lib/detail-page/master-reference'
+import type { DescriptionImageSlots } from '@/lib/description-layout'
+
+// ─── AI Fitting — 제품 변형(색상·디자인별 사진) ──────────────────────────────
+
+/** 원본 제품 사진을 가리키는 고정 변형 id */
+export const ORIGINAL_VARIANT_ID = 'original'
+export const MAX_PRODUCT_VARIANTS = 6
+
+export type VariantKind = 'color' | 'design'
+
+/** 원본 외에 셀러가 추가로 올린 색상·디자인 변형 (Storage 업로드 완료분만 등록) */
+export interface ProductVariant {
+  id: string
+  label: string
+  kind: VariantKind
+  imageUrl: string
+}
+
+export interface AiFittingItem {
+  id?: string
+  url: string
+  aspectRatio: string
+  width: number
+  height: number
+  modelImageUrl?: string | null
+  /** 어느 변형으로 합성했는지. 없으면 원본(히스토리 복원분 포함) */
+  variantId?: string
+  variantLabel?: string
+}
 
 // ─── v1.1 Phase 2 — Detail Page Editor 섹션 타입 ───────────────────────────
 
@@ -12,7 +41,9 @@ export type ShotSlot = 'productShot' | 'fitShot' | 'detailShot' | 'lifestyle'
 export type DetailSection =
   | { id: string; type: 'hero';        title: string; tagline: string; image?: string; shotSlot?: ShotSlot }
   | { id: string; type: 'features';    heading: string; items: string[]; shotSlot?: ShotSlot }
-  | { id: string; type: 'description'; content: string; shotSlot?: ShotSlot }
+  // images: 문단 사이 사진 (index i = i번째 문단 뒤). 편집 중 원본은 store.descriptionImages 이고,
+  // 내보내기 요청 시 첫 description 섹션에만 주입된다.
+  | { id: string; type: 'description'; content: string; images?: DescriptionImageSlots; shotSlot?: ShotSlot }
   | { id: string; type: 'keywords';    items: string[]; shotSlot?: ShotSlot }
   | { id: string; type: 'reviews';     placeholder: string; shotSlot?: ShotSlot }
   | { id: string; type: 'cta';         label: string; url?: string; shotSlot?: ShotSlot }
@@ -220,16 +251,15 @@ export interface StudioStore {
   /** "같은 모델로 다시 피팅" / "다른 모델 사용" 사용자 선택 */
   reuseLastModel: boolean
   /** 생성된 AI Fitting 결과들 */
-  aiFittings: Array<{
-    id?: string
-    url: string
-    aspectRatio: string
-    width: number
-    height: number
-    modelImageUrl?: string | null
-  }>
+  aiFittings: AiFittingItem[]
   /** 결과 페이지의 hero 이미지로 선택된 fitting URL */
   selectedFittingUrl: string | null
+  /** 원본 외 색상·디자인 변형 */
+  productVariants: ProductVariant[]
+  /** 원본 제품 사진의 변형 이름 (기본 '기본') */
+  originalVariantLabel: string
+  /** 상세설명 문단 사이 사진 배치. null = 생성 이미지로 자동 배치 */
+  descriptionImages: DescriptionImageSlots | null
 
   // ─── Actions ───────────────────────────────────────────────────────────
   setMode: (mode: StudioMode) => void
@@ -275,7 +305,15 @@ export interface StudioStore {
   toggleReuseLastModel: () => void
   setAiFittings: (items: StudioStore['aiFittings']) => void
   addAiFittings: (items: StudioStore['aiFittings']) => void
+  /** 한 변형의 결과만 교체 (다른 변형 결과는 유지) */
+  replaceVariantFittings: (variantId: string, items: AiFittingItem[]) => void
   selectFittingHero: (url: string | null) => void
+  addProductVariant: (variant: ProductVariant) => void
+  updateProductVariant: (id: string, patch: Partial<Pick<ProductVariant, 'label' | 'kind'>>) => void
+  /** 변형과 그 변형의 합성 결과를 함께 제거 */
+  removeProductVariant: (id: string) => void
+  setOriginalVariantLabel: (label: string) => void
+  setDescriptionImages: (slots: DescriptionImageSlots | null) => void
 }
 
 // ─── 초기 상태 ─────────────────────────────────────────────────────────────
@@ -311,6 +349,13 @@ const initialState = {
   reuseLastModel: true,
   aiFittings: [] as StudioStore['aiFittings'],
   selectedFittingUrl: null,
+  productVariants: [] as ProductVariant[],
+  originalVariantLabel: '기본',
+  descriptionImages: null as DescriptionImageSlots | null,
+}
+
+function fittingVariantId(item: AiFittingItem): string {
+  return item.variantId ?? ORIGINAL_VARIANT_ID
 }
 
 // ─── Store 정의 (전역 1개만 허용) ──────────────────────────────────────────
@@ -321,8 +366,15 @@ export const useStudioStore = create<StudioStore>((set, get) => ({
   setMode: (mode) => set({ mode }),
 
   setImage: (url, base64) =>
-    // 새 원본 이미지 → 파생 레퍼런스 앵커 무효화 (다음 생성에서 재파생)
-    set({ uploadedImageUrl: url, uploadedImageBase64: base64 ?? null, referenceAnchors: null }),
+    // 새 원본 이미지 → 파생 레퍼런스 앵커·변형·문단 사진 배치 무효화
+    set({
+      uploadedImageUrl: url,
+      uploadedImageBase64: base64 ?? null,
+      referenceAnchors: null,
+      productVariants: [],
+      originalVariantLabel: '기본',
+      descriptionImages: null,
+    }),
 
   setProjectId: (id) => set({ projectId: id }),
 
@@ -462,7 +514,18 @@ export const useStudioStore = create<StudioStore>((set, get) => ({
     set({ modelImageUrl: url, modelImageBase64: base64 ?? null }),
 
   clearModelImage: () =>
-    set({ modelImageBase64: null, modelImageUrl: null, aiFittings: [], selectedFittingUrl: null }),
+    set((state) => {
+      const clearedUrls = new Set(state.aiFittings.map((f) => f.url))
+      return {
+        modelImageBase64: null,
+        modelImageUrl: null,
+        aiFittings: [],
+        selectedFittingUrl: null,
+        descriptionImages: state.descriptionImages
+          ? state.descriptionImages.map((u) => (u && clearedUrls.has(u) ? null : u))
+          : null,
+      }
+    }),
 
   toggleReuseLastModel: () =>
     set((state) => ({ reuseLastModel: !state.reuseLastModel })),
@@ -479,7 +542,64 @@ export const useStudioStore = create<StudioStore>((set, get) => ({
       selectedFittingUrl: state.selectedFittingUrl ?? items[0]?.url ?? null,
     })),
 
+  replaceVariantFittings: (variantId, items) =>
+    set((state) => {
+      const removed = state.aiFittings.filter((f) => fittingVariantId(f) === variantId)
+      const kept = state.aiFittings.filter((f) => fittingVariantId(f) !== variantId)
+      const heroReplaced =
+        state.selectedFittingUrl === null || removed.some((f) => f.url === state.selectedFittingUrl)
+      return {
+        aiFittings: [...kept, ...items],
+        selectedFittingUrl: heroReplaced ? (items[0]?.url ?? kept[0]?.url ?? null) : state.selectedFittingUrl,
+      }
+    }),
+
   selectFittingHero: (url) => set({ selectedFittingUrl: url }),
+
+  addProductVariant: (variant) =>
+    set((state) =>
+      state.productVariants.length + 1 >= MAX_PRODUCT_VARIANTS
+        ? {}
+        : { productVariants: [...state.productVariants, variant] },
+    ),
+
+  updateProductVariant: (id, patch) =>
+    set((state) => ({
+      productVariants: state.productVariants.map((v) => (v.id === id ? { ...v, ...patch } : v)),
+      aiFittings:
+        patch.label === undefined
+          ? state.aiFittings
+          : state.aiFittings.map((f) => (f.variantId === id ? { ...f, variantLabel: patch.label } : f)),
+    })),
+
+  removeProductVariant: (id) =>
+    set((state) => {
+      const removedUrls = new Set(state.aiFittings.filter((f) => f.variantId === id).map((f) => f.url))
+      const aiFittings = state.aiFittings.filter((f) => f.variantId !== id)
+      const selectedFittingUrl =
+        state.selectedFittingUrl && removedUrls.has(state.selectedFittingUrl)
+          ? (aiFittings[0]?.url ?? null)
+          : state.selectedFittingUrl
+      const descriptionImages = state.descriptionImages
+        ? state.descriptionImages.map((u) => (u && removedUrls.has(u) ? null : u))
+        : null
+      return {
+        productVariants: state.productVariants.filter((v) => v.id !== id),
+        aiFittings,
+        selectedFittingUrl,
+        descriptionImages,
+      }
+    }),
+
+  setOriginalVariantLabel: (label) =>
+    set((state) => ({
+      originalVariantLabel: label,
+      aiFittings: state.aiFittings.map((f) =>
+        fittingVariantId(f) === ORIGINAL_VARIANT_ID ? { ...f, variantLabel: label } : f,
+      ),
+    })),
+
+  setDescriptionImages: (slots) => set({ descriptionImages: slots }),
 }))
 
 // ─── 편의 셀렉터 ───────────────────────────────────────────────────────────

@@ -24,6 +24,8 @@ import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { createClient as createSupabaseAdmin } from '@supabase/supabase-js'
 import { createHmac, timingSafeEqual } from 'crypto'
+import { sendAlert } from '@/lib/alerts'
+import { logEvent } from '@/lib/analytics'
 
 export const runtime = 'nodejs'
 export const maxDuration = 30
@@ -160,6 +162,15 @@ export async function POST(request: NextRequest) {
           // amount 불일치 → 200 으로 응답해 재시도 멈추고, 운영 알람으로 처리.
           // (5xx 로 답하면 Toss 가 무한 재시도하므로 명시적으로 처리 종료)
           console.error('[Toss Webhook] amount_mismatch detected — review required')
+          void sendAlert({
+            severity: 'error',
+            subject: 'Toss webhook: amount_mismatch',
+            body:
+              '결제 webhook 금액이 pending_orders.expected_amount 와 일치하지 않습니다.\n' +
+              '수동 확인 후 처리 필요 — Toss 재시도는 중단됐습니다.',
+            context: { orderId, totalAmount, eventId },
+            dedupeKey: `toss:amount_mismatch:${orderId}`,
+          })
           return NextResponse.json({ received: true, rejected: 'amount_mismatch' })
         }
 
@@ -176,16 +187,39 @@ export async function POST(request: NextRequest) {
         if (reason === 'unknown_key') {
           // WHK-04: pending_orders.key 오설정 — 재시도로 안 고쳐지므로 200 종결 + 알람
           console.error('[Toss Webhook] unknown_key — pending_orders.key misconfigured')
+          void sendAlert({
+            severity: 'error',
+            subject: 'Toss webhook: unknown_key (pending_orders.key 오설정)',
+            body:
+              'pending_orders 의 key 가 플랜 매핑에 등록되지 않았습니다.\n' +
+              'DB 측 pending_orders.key 와 apply_payment_event 의 플랜 매핑을 재확인하세요.',
+            context: { orderId, totalAmount, eventId },
+            dedupeKey: `toss:unknown_key:${orderId}`,
+          })
           return NextResponse.json({ received: true, rejected: 'unknown_key' })
         }
 
         // 그 외 미정의 reason → 운영자가 검토하도록 5xx
         console.error('[Toss Webhook] unknown reason:', reason)
+        void sendAlert({
+          severity: 'error',
+          subject: 'Toss webhook: unknown reason',
+          body: 'apply_payment_event RPC 가 정의되지 않은 reason 을 반환했습니다. 즉시 검토 필요.',
+          context: { orderId, totalAmount, reason, eventId },
+          dedupeKey: `toss:unknown_reason:${orderId}:${reason ?? '-'}`,
+        })
         return NextResponse.json(
           { error: 'Unknown processing reason' },
           { status: 500 }
         )
       }
+
+      // 성공 — 분석/매출 추적용 (user_id/credits 는 pending_orders 조회 비용 때문에
+      // apply_payment_event RPC 가 반환할 때까지 project_id 는 null 로 기록).
+      void logEvent('credit_purchase', {
+        projectId: undefined,
+        metadata: { orderId, totalAmount, eventId, source: 'toss' },
+      })
 
       return NextResponse.json({ received: true })
     }
@@ -246,6 +280,17 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ received: true, ignored: eventType })
   } catch (err) {
     console.error('[Toss Webhook] handler exception:', err instanceof Error ? err.message : 'unknown')
+    void sendAlert({
+      severity: 'error',
+      subject: 'Toss webhook: handler exception',
+      body: '웹훅 핸들러에서 예외가 발생했습니다. 로그 확인 및 수동 조치 필요.',
+      context: {
+        orderId,
+        eventType,
+        message: err instanceof Error ? err.message : String(err),
+      },
+      dedupeKey: `toss:exception:${orderId}`,
+    })
     return NextResponse.json({ error: 'Internal processing error' }, { status: 500 })
   }
 }

@@ -8,6 +8,7 @@ import { useState } from 'react'
 import Image from 'next/image'
 import { Check, Download, Loader2, ImageOff, Pin, RotateCw, X, Crop } from 'lucide-react'
 import { ThumbnailMaskEditor } from '@/components/thumbnail-mask-editor'
+import { buildImageName, downloadImages, ratioToken } from '@/lib/download-images'
 
 // ─── 타입 ────────────────────────────────────────────────────────────────────
 
@@ -29,6 +30,8 @@ interface ThumbnailGridProps {
   /** v1.1 Phase 2 — "핀 안 된 것만 다시" — refinement 와 함께 호출 */
   onReroll?: (refinement: string) => Promise<void>
   selectedId?: string
+  /** 다운로드 파일명 앞부분 (보통 상품명) */
+  downloadBaseName?: string
 }
 
 // ─── 종횡비 레이블 ────────────────────────────────────────────────────────────
@@ -55,6 +58,7 @@ export function ThumbnailGrid({
   onTogglePin,
   onReroll,
   selectedId,
+  downloadBaseName,
 }: ThumbnailGridProps) {
   const [hoveredId, setHoveredId] = useState<string | null>(null)
   const [rerollOpen, setRerollOpen] = useState(false)
@@ -62,14 +66,46 @@ export function ThumbnailGrid({
   const [rerolling, setRerolling] = useState(false)
   // Phase 3.4 — 영역 마스크 편집 대상
   const [maskTarget, setMaskTarget] = useState<ThumbnailItem | null>(null)
+  const [downloading, setDownloading] = useState(false)
+  const [downloadNote, setDownloadNote] = useState<string | null>(null)
 
   const getKey = (t: ThumbnailItem, i: number) => t.id ?? `${t.aspectRatio}-${i}`
 
   const pinCount = pinnedAspectRatios?.size ?? 0
   const totalCount = thumbnails.length
 
+  const runDownload = async (items: ThumbnailItem[]) => {
+    if (items.length === 0) return
+    setDownloading(true)
+    setDownloadNote(null)
+    try {
+      const outcome = await downloadImages(
+        items.map((t) => ({ url: t.url, name: buildImageName([downloadBaseName, '썸네일', ratioToken(t.aspectRatio)]) })),
+        buildImageName([downloadBaseName, '썸네일']),
+      )
+      if (outcome.failed > 0) setDownloadNote(`${outcome.saved}장 저장 · ${outcome.failed}장은 받지 못했어요.`)
+    } catch (err) {
+      setDownloadNote(err instanceof Error ? err.message : '다운로드 실패')
+    } finally {
+      setDownloading(false)
+    }
+  }
+
   return (
     <div className="space-y-3">
+      {!isGenerating && totalCount > 1 && (
+        <div className="flex items-center justify-end gap-2">
+          {downloadNote && <span className="text-[11px]" style={{ color: '#d30005' }}>{downloadNote}</span>}
+          <button
+            onClick={() => runDownload(thumbnails)}
+            disabled={downloading}
+            className="inline-flex items-center gap-1 px-3 h-8 rounded-full text-[11px] font-bold text-white bg-[#111111] hover:bg-[#333333] transition-colors disabled:opacity-50"
+          >
+            {downloading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Download className="w-3 h-3" />}
+            전체 {totalCount}장 다운로드 (ZIP)
+          </button>
+        </div>
+      )}
       {/* 그리드 */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {isGenerating
@@ -153,16 +189,19 @@ export function ThumbnailGrid({
                             <Crop className="w-3.5 h-3.5 text-[#111111]" />
                           </button>
                         )}
-                        <a
-                          href={thumb.url}
-                          download={`thumbnail-${thumb.aspectRatio.replace(':', 'x')}.jpg`}
-                          onClick={(e) => e.stopPropagation()}
-                          className="w-7 h-7 flex items-center justify-center"
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            void runDownload([thumb])
+                          }}
+                          disabled={downloading}
+                          className="w-7 h-7 flex items-center justify-center disabled:opacity-50"
                           style={{ backgroundColor: 'rgba(255,255,255,0.9)' }}
                           title="다운로드"
+                          aria-label={`${thumb.aspectRatio} 썸네일 다운로드`}
                         >
                           <Download className="w-3.5 h-3.5 text-[#111111]" />
-                        </a>
+                        </button>
                       </div>
                     )}
                   </div>

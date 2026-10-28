@@ -16,6 +16,7 @@ import { buildThemeStyle, DEFAULT_THEME } from '@/lib/detail-page/themes'
 import type { ThemeId } from '@/lib/detail-page/themes'
 import type { DetailSection, ShotSlot } from '@/store/studio'
 import { checkCreditGuard, deductCredits } from '@/lib/credit-guard'
+import { splitParagraphs } from '@/lib/description-layout'
 
 export const runtime = 'nodejs'
 // 30s: AI 호출 없음 — 섹션 → HTML 조립(CPU) + 크레딧 차감 Supabase 왕복만 수행
@@ -52,7 +53,12 @@ const legalFieldSchema = z.object({ label: z.string(), value: z.string() })
 const SectionSchema = z.discriminatedUnion('type', [
   z.object({ id: z.string(), type: z.literal('hero'),        title: z.string(), tagline: z.string(), image: z.string().optional(), shotSlot: shotSlotSchema.optional() }),
   z.object({ id: z.string(), type: z.literal('features'),    heading: z.string(), items: z.array(z.string()), shotSlot: shotSlotSchema.optional() }),
-  z.object({ id: z.string(), type: z.literal('description'), content: z.string(), shotSlot: shotSlotSchema.optional() }),
+  z.object({
+    id: z.string(), type: z.literal('description'), content: z.string(),
+    // 문단 사이 사진 (index i = i번째 문단 뒤)
+    images: z.array(z.string().max(2048).nullable()).max(20).optional(),
+    shotSlot: shotSlotSchema.optional(),
+  }),
   z.object({ id: z.string(), type: z.literal('keywords'),    items: z.array(z.string()), shotSlot: shotSlotSchema.optional() }),
   z.object({ id: z.string(), type: z.literal('reviews'),     placeholder: z.string(), shotSlot: shotSlotSchema.optional() }),
   z.object({ id: z.string(), type: z.literal('cta'),         label: z.string(), url: z.string().optional(), shotSlot: shotSlotSchema.optional() }),
@@ -236,12 +242,26 @@ ${shot}
       )
     }
 
-    // ── DESCRIPTION — 스토리 본문 (sand 밴드) ─────────────────────────────
-    case 'description':
-      return band(
-        `${eyebrow(no, '상품 이야기')}<h2 class="title">상품 소개</h2><p class="body">${escapeHtml(s.content)}</p>`,
-        { alt: true },
-      )
+    // ── DESCRIPTION — 스토리 본문 (sand 밴드) + 문단 사이 사진 ────────────
+    case 'description': {
+      const head = `${eyebrow(no, '상품 이야기')}<h2 class="title">상품 소개</h2>`
+      const images = (s.images ?? []).map((u) => (u && isSafeUrl(u) ? u : null))
+      if (!images.some(Boolean)) {
+        return band(`${head}<p class="body">${escapeHtml(s.content)}</p>`, { alt: true })
+      }
+      // 04 미리보기·편집기와 같은 규칙으로 문단을 나눠야 사진 위치가 일치한다
+      const paragraphs = splitParagraphs(s.content)
+      const flow = paragraphs
+        .map((p, idx) => {
+          const url = idx < paragraphs.length - 1 ? images[idx] : null
+          const fig = url
+            ? `<figure class="desc-fig"><img src="${escapeHtml(url)}" alt="${escapeHtml(`상품 이미지 ${idx + 1}`)}" /></figure>`
+            : ''
+          return `<p class="body">${escapeHtml(p)}</p>${fig}`
+        })
+        .join('')
+      return band(`${head}<div class="desc-flow">${flow}</div>`, { alt: true })
+    }
 
     // ── KEYWORDS — 태그 칩 ────────────────────────────────────────────────
     case 'keywords': {
@@ -542,6 +562,11 @@ const CANVAS_STYLES = `
   .image-fig { margin: 0; }
   .image-fig .shot { aspect-ratio: 4 / 3; }
   .image-fig figcaption { margin-top: 12px; text-align: center; }
+
+  /* DESCRIPTION — 문단 사이 사진 */
+  .desc-flow .body + .body { margin-top: 28px; }
+  .desc-fig { margin: 36px auto; max-width: 560px; }
+  .desc-fig img { display: block; width: 100%; height: auto; border-radius: var(--radius, 6px); }
 
   /* SPLIT / FEATURE-SPLIT */
   .split { display: grid; grid-template-columns: 1fr 1fr; gap: 44px; align-items: center; }
