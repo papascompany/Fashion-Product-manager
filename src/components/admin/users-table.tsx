@@ -329,8 +329,9 @@ function CreditAdjustor({
   )
 }
 
+// 첫 HTML 은 서버(UTC)에서 렌더된다 — KST 0~9시 가입자는 서버에서 전날로 찍혀 하이드레이션이 어긋난다
 function formatDate(iso: string) {
-  return new Date(iso).toLocaleDateString('ko-KR', { year: '2-digit', month: 'numeric', day: 'numeric' })
+  return new Date(iso).toLocaleDateString('ko-KR', { year: '2-digit', month: 'numeric', day: 'numeric', timeZone: 'Asia/Seoul' })
 }
 
 /**
