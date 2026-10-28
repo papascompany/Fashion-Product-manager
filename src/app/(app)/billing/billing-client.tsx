@@ -267,8 +267,9 @@ export function BillingClient({ userId, currentPlan, creditsLeft, email, usageEv
     }
   }
 
+  // 첫 HTML 은 서버(UTC)에서 렌더된다 — 시간대를 고정해야 브라우저와 같아져 하이드레이션 불일치(#418)가 안 난다
   const formatDate = (iso: string) =>
-    new Date(iso).toLocaleDateString('ko-KR', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+    new Date(iso).toLocaleDateString('ko-KR', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Seoul' })
 
   const EVENT_LABELS: Record<string, string> = {
     quick_generated: '간편 모드 생성',

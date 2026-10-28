@@ -190,9 +190,11 @@ function Td({ children, align = 'left' }: { children: React.ReactNode; align?: '
   return <td className={`px-3 py-2 text-${align}`}>{children}</td>
 }
 
+// 서버 컴포넌트는 Vercel(UTC)에서 렌더된다 — 고정하지 않으면 KST 보다 9시간 이르게 보인다
 function formatDate(iso: string) {
   return new Date(iso).toLocaleString('ko-KR', {
     month: 'numeric', day: 'numeric',
     hour: '2-digit', minute: '2-digit',
+    timeZone: 'Asia/Seoul',
   })
 }
